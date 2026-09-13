@@ -46,9 +46,12 @@ CONFIGURATION (server/.env)
 ---------------------------
 Copy .env.example to .env and set at least these two:
 
-  JWT_SECRET   Required — the server refuses to start without it.
-               Generate one with:
-                 node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+  JWT_SECRET   Required — the server refuses to start without it, and refuses
+               to start on the placeholder .env.example ships with.
+                 npm run new-secret
+               writes a fresh one into .env and prints nothing secret. Run it
+               again any time the secret may have been seen; everyone signed in
+               is signed out, which is the point.
 
   LDAP_URL     The domain controller. Leave it blank to run on local accounts
                only (useful on a laptop); sign-in then uses the seeded test
@@ -121,6 +124,8 @@ sessions, audit_log, app_settings.
 
 CHECK SCRIPTS
 -------------
+  npm run new-secret      generate a fresh JWT_SECRET into .env (signs everyone
+                          out — the old tokens were signed with the old key)
   npm run check-env       is this machine configured correctly?
   npm run data-check      does the data contradict any rule it should obey?
                           (deadlines, delay arithmetic, on-time flags, orphans,

@@ -3,9 +3,16 @@
 # here. Anyone holding JWT_SECRET can mint a token for any account, so this file
 # belongs on each machine and nowhere else. server/.env.example is the template
 # that IS committed.
-server/.env
+# Everything .env-shaped, including the copies that get made around it —
+# .env.bak (written by `npm run new-secret`), .env.local, .env.old, .env.save
+# from an editor. A pattern listing only the exact name `.env` leaves every one
+# of those committable, and .env.bak in particular holds the secret that was
+# just rotated away.
 .env
-*.env.local
+.env.*
+*.env
+!.env.example
+!*.env.example
 
 # The database, and the -wal/-shm files SQLite keeps beside it. Each deployment
 # owns its own data; committing it would overwrite the server's records with

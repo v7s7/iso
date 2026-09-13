@@ -47,8 +47,7 @@ major version, the copy will not load and the module has to be built properly.
 
 Then edit .env and set these four:
 
-    JWT_SECRET      generate it, do not invent one:
-                      node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+    JWT_SECRET      npm run new-secret   — writes one into .env, prints nothing
                     Use a DIFFERENT secret from docTracking's. They are separate
                     systems; sharing a signing key means a token minted by one
                     is valid in the other.
