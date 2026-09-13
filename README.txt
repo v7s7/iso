@@ -91,6 +91,30 @@ Role mapping — server/config/directory-map.json:
 Browsing the directory (the import screen) additionally needs a read-only
 service account in LDAP_BIND_DN / LDAP_BIND_PASSWORD. Sign-in works without it.
 
+WHERE DEPARTMENTS COME FROM — and why not from AD
+  They cannot come from Active Directory. `npm run ad-probe` against SWD's
+  directory reports the `department` attribute populated on 0 of 300 accounts,
+  and the groups that do exist (all staff, swd staff, ma&r, rental, orbit-users)
+  are functional groups, not the قسم structure this system measures.
+
+  So the departments come from docTracking, which already holds them for 119
+  people, linked to AD accounts and confirmed by hand:
+
+    npm run export-link -- --from "<path>\docTracking\server\data\doctracking.db"
+        Reads docTracking READ-ONLY and writes server/data/directory-link.csv.
+        Writes nothing else. Open the CSV, check it, correct it.
+        Blank someone's iso_dept_prefix cell to leave them out.
+
+    npm run import-link              shows what would change, writes nothing
+    npm run import-link -- --apply   writes it
+
+  The accounts it creates have NO password — password_hash stays NULL, which is
+  what sends their sign-in to Active Directory. It is an upsert keyed on the
+  username, so re-running only applies what the CSV has changed.
+
+  Anyone not imported can still sign in; they simply arrive with no department
+  and cannot file a request until someone gives them one in إدارة النظام.
+
 What AD owns and what this system owns:
   AD owns who someone is — their name, their email, their password.
   This system owns what they may do — role, department, active or not.

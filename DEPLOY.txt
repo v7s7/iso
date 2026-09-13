@@ -192,8 +192,18 @@ BEFORE REAL USERS
       admin @test.local). They have a published password.
   [ ] Set SUPER_ADMIN_USERS in .env to a real person — it is the lockout
       failsafe, and no screen in the app can remove it.
-  [ ] Map the AD groups in server/config/directory-map.json. Run
-      `npm run ad-probe` to see which groups actually exist and how many people
-      are in each; it prints them in the exact spelling the file expects.
+  [ ] Give people their departments. NOT from Active Directory — ad-probe shows
+      the `department` attribute empty on all 300 accounts, and the groups that
+      exist are functional ones, not أقسام. Import them from docTracking, which
+      already has them confirmed by hand:
+
+          npm run export-link -- --from "<path>\docTracking\server\data\doctracking.db"
+          (read server/data/directory-link.csv, correct it)
+          npm run import-link              — dry run
+          npm run import-link -- --apply
+
+      config/directory-map.json stays as it is unless AD groups are created
+      specifically for this; it is read on every sign-in, so it can be filled in
+      later with no restart.
   [ ] Confirm at least one real account reaches إدارة النظام.
   [ ] Decide whether the site should survive a reboot (see PM2 above).

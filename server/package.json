@@ -12,7 +12,9 @@
     "ad-probe": "node scripts/ad-probe.js",
     "test-flow": "node scripts/test-flow.js",
     "test-security": "node scripts/test-security.js",
-    "new-secret": "node scripts/new-secret.js"
+    "new-secret": "node scripts/new-secret.js",
+    "export-link": "node scripts/export-directory-link.js",
+    "import-link": "node scripts/import-directory-link.js"
   },
   "license": "ISC",
   "dependencies": {
