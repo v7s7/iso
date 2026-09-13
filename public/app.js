@@ -184,7 +184,7 @@ function exportAdminXlsx(d){let names={users:'المستخدمون',departments:
 function userReadableSnapshot(d,x){return {name:x.name,email:x.email,department:depName(d,x.departmentId),role:roleName(x.role),admin:x.admin?'نعم':'لا',active:x.active?'فعال':'غير فعال',force:x.forcePasswordChange?'نعم':'لا'}}
 function readableUserDiff(before,after){let labels={name:'الاسم',email:'البريد الرسمي',department:'القسم',role:'الدور',admin:'مدير نظام',active:'الحالة',force:'إجبار تغيير كلمة المرور'},keys=Object.keys(labels).filter(k=>String(before[k])!==String(after[k]));if(!keys.length)return {oldText:'لا تغيير',newText:'لا تغيير'};return {oldText:keys.map(k=>`${labels[k]}: ${before[k]}`).join(' | '),newText:keys.map(k=>`${labels[k]}: ${after[k]}`).join(' | ')}}
 function profileBadge(d,u){if(u.role==='supervisor')return `مشرف قسم — ${depName(d,u.departmentId)}`;return `${roleName(u.role)}${u.admin?' + مدير نظام':''}`}
-function shell(content,d,u){return `<div class="layout"><aside class="sidebar"><div class="brand">نظام تسجيل الجودة<div class="muted">Phase 1 - Build 0.8 تجريبي</div></div><div class="nav"><button data-nav="dashboard" class="${state.view==='dashboard'?'active':''}">لوحة التحكم</button><button data-nav="new" class="${state.view==='new'?'active':''}">تسجيل طلب جديد</button><button data-nav="password" class="${state.view==='password'?'active':''}">تغيير كلمة المرور</button>${u.admin?`<button data-nav="admin" class="${state.view==='admin'?'active':''}">إدارة النظام</button>`:''}<button id="logout">تسجيل الخروج</button></div></aside><main class="content"><div class="topbar"><div><strong>${u.name}</strong><div class="small muted">${u.email} • ${depName(d,u.departmentId)}</div></div><span class="badge">${profileBadge(d,u)}</span></div>${state.flash?`<div class="alert ${state.flash.type}">${state.flash.text}</div>`:''}${content}</main></div>`}
+function shell(content,d,u){return `<div class="layout"><aside class="sidebar"><div class="brand">نظام تسجيل الجودة<div class="muted">Phase 1 - Build 0.8 تجريبي</div></div><div class="nav"><button data-nav="dashboard" class="${state.view==='dashboard'?'active':''}">لوحة التحكم</button><button data-nav="new" class="${state.view==='new'?'active':''}">تسجيل طلب جديد</button><button data-nav="password" class="${state.view==='password'?'active':''}">تغيير كلمة المرور</button>${u.admin?`<button data-nav="admin" class="${state.view==='admin'?'active':''}">إدارة النظام</button>`:''}<button id="refreshData">تحديث البيانات</button><button id="logout">تسجيل الخروج</button></div></aside><main class="content"><div class="topbar"><div><strong>${u.name}</strong><div class="small muted">${u.email} • ${depName(d,u.departmentId)}</div></div><span class="badge">${profileBadge(d,u)}</span></div>${state.flash?`<div class="alert ${state.flash.type}">${state.flash.text}</div>`:''}${content}</main></div>`}
 // type="text", not type="email": an Active Directory account signs in with a
 // username like "a.alkubaesy", which the browser's email validation refuses
 // outright — the form would never submit and the server would never be asked.
@@ -254,7 +254,16 @@ function bindForcePassword(){
   }catch(ex){err(ex.message||'تعذّر تغيير كلمة المرور.')}
  }}
 function setAndRender(k,v){state[k]=v;render()}
-function bindCommon(d,u){document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{state.view=b.dataset.nav;state.reqCode=null;render()});let lo=document.getElementById('logout');if(lo)lo.onclick=async()=>{
+function bindCommon(d,u){document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{state.view=b.dataset.nav;state.reqCode=null;render()});let rf=document.getElementById('refreshData');if(rf)rf.onclick=async()=>{
+  // The snapshot is fetched once at sign-in. Anything an administrator changes
+  // afterwards — importing staff, moving someone's department, adding a service —
+  // is invisible to a page already open until it asks again. This is that ask.
+  rf.disabled=true;const was=rf.textContent;rf.textContent='...جارٍ التحديث';
+  try{await refresh();state.flash={type:'success',text:'تم تحديث البيانات.'}}
+  catch(e){state.flash={type:'danger',text:e.message||'تعذّر التحديث.'}}
+  rf.disabled=false;rf.textContent=was;render();
+ };
+ let lo=document.getElementById('logout');if(lo)lo.onclick=async()=>{
   // Deleting the session row server-side is what actually ends it; clearing the
   // token here alone would leave a working token behind.
   await API.logout();DATA=null;ME=null;resetDashboardFilters();state.view='dashboard';render()};document.querySelectorAll('[data-open]').forEach(x=>x.onclick=()=>{state.view='detail';state.reqCode=x.dataset.open;render()});
@@ -432,12 +441,42 @@ API.onSessionLost((message) => {
   }
 });
 
+// Re-fetch when the tab comes back to the front, if the snapshot is more than a
+// minute old.
+//
+// The data is loaded once at sign-in, so a page left open shows whatever was
+// true when it was opened — and an administrator who imports a hundred staff
+// then looks at a tab from before sees none of them, which looks exactly like
+// the import having failed. It cost real time to diagnose three times over.
+//
+// Tied to focus rather than a timer: a page nobody is looking at does not need
+// to be correct, and polling every open tab all day to fix a rare staleness is
+// the wrong trade. The one-minute floor stops a burst of alt-tabbing from
+// firing a request each time.
+let lastRefreshAt = 0;
+const REFRESH_AFTER_MS = 60 * 1000;
+
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden || !API.isSignedIn() || !DATA) return;
+  if (Date.now() - lastRefreshAt < REFRESH_AFTER_MS) return;
+  try {
+    await refresh();
+    lastRefreshAt = Date.now();
+    render();
+  } catch {
+    // A failed background refresh is not worth interrupting anyone over. The
+    // page keeps working on what it already has; a 401 is handled by
+    // onSessionLost, which is the only case that actually matters.
+  }
+});
+
 (async () => {
   // A token from a previous page load in this tab. Trying it means a refresh
   // does not ask for the password again; if it has been revoked, onSessionLost
   // above puts the login screen up.
   if (API.isSignedIn()) {
-    try { await refresh(); } catch { /* onSessionLost has already handled it */ }
+    try { await refresh(); lastRefreshAt = Date.now(); }
+    catch { /* onSessionLost has already handled it */ }
   }
   render();
 })();
