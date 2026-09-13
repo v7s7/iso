@@ -105,8 +105,8 @@ WHERE DEPARTMENTS COME FROM — and why not from AD
         Writes nothing else. Open the CSV, check it, correct it.
         Blank someone's iso_dept_prefix cell to leave them out.
 
-    npm run import-link              shows what would change, writes nothing
-    npm run import-link -- --apply   writes it
+    npm run import-link                                  dry run
+    npm run import-link -- --apply --uncertain=exclude   write it
 
   The accounts it creates have NO password — password_hash stays NULL, which is
   what sends their sign-in to Active Directory. It is an upsert keyed on the

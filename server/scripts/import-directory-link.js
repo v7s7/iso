@@ -3,6 +3,20 @@
 //   npm run import-link            — show what WOULD change, write nothing
 //   npm run import-link -- --apply — write it
 //
+//   --uncertain=exclude   leave the rows marked UNCERTAIN out
+//   --uncertain=include   bring them in as the CSV has them
+//
+// The UNCERTAIN rows are a question the export could not answer, and the import
+// refuses to guess. Answering it by hand means editing a UTF-8 CSV full of
+// Arabic on a Windows server, which is its own source of mistakes — so the
+// answer can be given as a flag instead. Either way it is an explicit decision,
+// and it is recorded in the audit log.
+//
+// If you are unsure, EXCLUDE. Someone left out arrives with no department, and
+// the first thing they do is ask — the question surfaces itself. Someone filed
+// under the wrong قسم goes on filing requests that are counted against a
+// department they are not in, and nothing ever says so.
+//
 // Pass 2 of 2. Reads server/data/directory-link.csv — the one you corrected —
 // and gives each person their ISO department and role.
 //
@@ -24,6 +38,14 @@ const { logAudit } = require('../utils/audit');
 
 const APPLY = process.argv.includes('--apply');
 const CSV   = path.join(__dirname, '..', 'data', 'directory-link.csv');
+
+// null = undecided, and the import will refuse to apply.
+const uncertainArg = process.argv.find(a => a.startsWith('--uncertain='));
+const UNCERTAIN = uncertainArg ? uncertainArg.split('=')[1] : null;
+if (UNCERTAIN && !['include', 'exclude'].includes(UNCERTAIN)) {
+  console.error(`\n  --uncertain must be "include" or "exclude", not "${UNCERTAIN}"\n`);
+  process.exit(1);
+}
 
 if (!fs.existsSync(CSV)) {
   console.error(`\n  ${CSV} does not exist.`);
@@ -89,8 +111,15 @@ for (const r of rows) {
   if (!dept) { plan.problems.push({ username, why: `unknown department prefix "${prefix}"` }); continue; }
   if (!VALID_ROLES.includes(role)) { plan.problems.push({ username, why: `unknown role "${role}"` }); continue; }
   if (confidence === 'UNCERTAIN') {
-    plan.problems.push({ username, why: 'still marked UNCERTAIN — decide, then clear the confidence cell or blank the prefix' });
-    continue;
+    if (UNCERTAIN === null) {
+      plan.problems.push({ username, why: 'marked UNCERTAIN — pass --uncertain=exclude or --uncertain=include, or edit the CSV' });
+      continue;
+    }
+    if (UNCERTAIN === 'exclude') {
+      plan.skipped.push({ username, fullName, why: 'UNCERTAIN, excluded by --uncertain=exclude' });
+      continue;
+    }
+    // include: falls through and is imported exactly as the CSV has it.
   }
 
   const existing = db.prepare(`
@@ -139,15 +168,29 @@ console.log(`\n  unchanged ${plan.unchanged.length}`);
 console.log(`  skipped   ${plan.skipped.length}  (blank department in the CSV)`);
 console.log('');
 
+if (UNCERTAIN) {
+  console.log(`  --uncertain=${UNCERTAIN} — the UNCERTAIN rows are being ${UNCERTAIN === 'exclude' ? 'left out' : 'imported'}.`);
+  console.log('');
+}
+
 if (!APPLY) {
   console.log('  Read the above. If it is right:');
-  console.log('    npm run import-link -- --apply');
+  if (plan.problems.length) {
+    console.log('    npm run import-link -- --apply --uncertain=exclude    (leave those 7 out)');
+    console.log('    npm run import-link -- --apply --uncertain=include    (bring them in)');
+    console.log('');
+    console.log('  Unsure? Exclude. They arrive with no department and ask, which answers');
+    console.log('  the question. A wrong department is counted silently and never does.');
+  } else {
+    console.log('    npm run import-link -- --apply' + (UNCERTAIN ? ` --uncertain=${UNCERTAIN}` : ''));
+  }
   console.log('');
   process.exit(plan.problems.length ? 1 : 0);
 }
 
 if (plan.problems.length) {
-  console.error('  Refusing to apply while rows still need a decision. Fix the CSV first.\n');
+  console.error('  Refusing to apply while rows still need a decision.');
+  console.error('  Add --uncertain=exclude or --uncertain=include, or edit the CSV.\n');
   process.exit(1);
 }
 
@@ -166,7 +209,8 @@ const apply = db.transaction(() => {
       VALUES (?, NULLIF(?,''), NULL, ?, ?, ?, 0, 1, 'DIRECTORY_IMPORT')
     `).run(p.username, p.email, p.fullName, p.deptId, p.role);
     logAudit(actor, 'استيراد حساب من الدليل', 'user', p.username,
-      { newValue: `${p.deptName} / ${p.role}` });
+      { newValue: `${p.deptName} / ${p.role}`,
+        details: UNCERTAIN ? { uncertainRows: UNCERTAIN } : undefined });
   }
 
   for (const p of plan.update) {

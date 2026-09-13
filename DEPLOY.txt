@@ -198,9 +198,21 @@ BEFORE REAL USERS
       already has them confirmed by hand:
 
           npm run export-link -- --from "<path>\docTracking\server\data\doctracking.db"
-          (read server/data/directory-link.csv, correct it)
-          npm run import-link              — dry run
-          npm run import-link -- --apply
+          npm run import-link                                 — dry run
+          npm run import-link -- --apply --uncertain=exclude  — write it
+
+      Read the dry run before applying. Rows the export could not decide are
+      marked UNCERTAIN and the import refuses to guess at them; --uncertain
+      answers that question in one go, rather than making you edit a UTF-8 CSV
+      full of Arabic on a server.
+
+      If unsure, EXCLUDE. Someone left out arrives with no department and the
+      first thing they do is ask, which answers the question. Someone filed
+      under the wrong قسم goes on being counted against a department they are
+      not in, and nothing ever says so.
+
+      Re-running is safe — it upserts on the username, so a second run applies
+      only what changed. Re-run it whenever people join or move.
 
       config/directory-map.json stays as it is unless AD groups are created
       specifically for this; it is read on every sign-in, so it can be filled in
