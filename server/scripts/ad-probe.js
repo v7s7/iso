@@ -19,13 +19,11 @@ const ATTRS = [
   'department', 'title', 'memberOf', 'userAccountControl',
 ];
 
-function bind(client, dn, pwd) {
-  return new Promise((resolve, reject) => {
-    const fail = e => { client.unbind(() => {}); reject(e); };
-    client.once('error', fail);
-    client.bind(dn, pwd, err => { client.removeListener('error', fail); err ? fail(err) : resolve(); });
-  });
-}
+// The bind is NOT reimplemented here. It used to be, and that was the problem:
+// this script is what you run to find out why the directory is not working, so
+// it binding differently from the app could report a failure the app would not
+// have had — or a success the app could not reproduce.
+const { bindServiceAccount } = require('../services/ldapService');
 
 const cn = dn => (String(dn).match(/^CN=([^,]+)/i) || [])[1] || String(dn);
 
@@ -43,8 +41,7 @@ const cn = dn => (String(dn).match(/^CN=([^,]+)/i) || [])[1] || String(dn);
   }
 
   const cfg    = getLdapConfig();
-  const client = createLdapClient(cfg.url);
-  await bind(client, bindDN, bindPwd);
+  const client = await bindServiceAccount(cfg, bindDN, bindPwd);
   console.log(`[probe] bound as ${bindDN}`);
   console.log(`[probe] baseDN ${cfg.baseDN}\n`);
 
@@ -107,6 +104,14 @@ const cn = dn => (String(dn).match(/^CN=([^,]+)/i) || [])[1] || String(dn);
   }
   console.log('');
 })().catch(e => {
-  console.error('[probe] failed:', e.message);
+  console.error('\n[probe] failed:', e.message);
+  // The whole point of a diagnostic is to name the cause. A raw ldapjs string
+  // ("LdapErr: DSID-0C09044A … data 52e") tells you nothing unless you already
+  // know AD's sub-codes, which is not the state anyone is in when they run this.
+  if (e.hint) console.error('[probe]', e.hint);
+  if (e.code === 'LDAP_UNREACHABLE') {
+    console.error(`[probe] ${process.env.LDAP_URL} did not answer. Check the address and the network.`);
+  }
+  console.error('');
   process.exit(1);
 });

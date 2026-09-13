@@ -128,6 +128,56 @@ function bindCandidates(identifier, cfg) {
 }
 
 /**
+ * Binds the read-only service account, trying each spelling.
+ *
+ * THE one place a service-account bind happens. It exists because the same
+ * inconsistency appeared three times: the login screen forgave a bare username,
+ * browseAllUsers() did not, and scripts/ad-probe.js had a third copy that also
+ * did not — so LDAP_BIND_DN could work in the app and fail in the diagnostic
+ * written to explain why the app was failing.
+ *
+ * Errors are classified rather than passed through raw: "the password is wrong"
+ * and "the domain controller is unreachable" arrive from ldapjs looking similar
+ * and lead to completely different places.
+ *
+ * @returns {Promise<object>} the bound ldapjs client — the caller unbinds it
+ */
+async function bindServiceAccount(cfg, bindDN, bindPwd) {
+  let lastError = null;
+  for (const candidate of bindCandidates(bindDN, cfg)) {
+    try {
+      const client = await bindClient(createLdapClient(cfg.url), candidate, bindPwd);
+      if (candidate !== String(bindDN).trim()) {
+        console.log(`[LDAP] service account bound as "${candidate}"`);
+      }
+      return client;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  const code = classifyLdapError(lastError);
+  const err = new Error(`Could not bind the LDAP service account "${bindDN}": ${lastError?.message || 'unknown error'}`);
+  // AD buries the actual reason in a sub-code. 52e is by far the most common and
+  // the most misleading — it means the ACCOUNT WAS FOUND and only the password
+  // was rejected, which usually means the password never arrived intact. An
+  // unquoted # in .env truncates it, and that is exactly what it looks like.
+  if (/data 52e/.test(lastError?.message || '')) {
+    err.hint = 'AD reports 52e — the account exists, the password was rejected. '
+             + 'If the password contains a "#", quote it in .env: KEY="pa55word###".';
+  } else if (/data 525/.test(lastError?.message || '')) {
+    err.hint = 'AD reports 525 — no such account. Check LDAP_BIND_DN.';
+  } else if (/data 533/.test(lastError?.message || '')) {
+    err.hint = 'AD reports 533 — the account is disabled.';
+  } else if (/data 532|data 773/.test(lastError?.message || '')) {
+    err.hint = 'AD reports an expired password on the service account.';
+  } else if (/data 775/.test(lastError?.message || '')) {
+    err.hint = 'AD reports 775 — the account is locked out.';
+  }
+  throw Object.assign(err, { code });
+}
+
+/**
  * Authenticates one person against Active Directory.
  *
  *  1. Build the bind spellings AD accepts for a bare username.
@@ -187,29 +237,8 @@ async function browseAllUsers() {
     );
   }
 
-  const cfg = getLdapConfig();
-
-  // Same spelling tolerance the login screen has. LDAP_BIND_DN is typed by hand
-  // into a file, once, by someone who will not be watching a log when it fails.
-  let client = null;
-  let lastError = null;
-  for (const candidate of bindCandidates(bindDN, cfg)) {
-    try {
-      client = await bindClient(createLdapClient(cfg.url), candidate, bindPwd);
-      if (candidate !== bindDN) console.log(`[LDAP] service account bound as "${candidate}"`);
-      break;
-    } catch (err) {
-      lastError = err;
-      client = null;
-    }
-  }
-  if (!client) {
-    const code = classifyLdapError(lastError);
-    throw Object.assign(
-      new Error(`Could not bind the LDAP service account "${bindDN}": ${lastError?.message || 'unknown error'}`),
-      { code }
-    );
-  }
+  const cfg    = getLdapConfig();
+  const client = await bindServiceAccount(cfg, bindDN, bindPwd);
 
   return new Promise((resolve, reject) => {
     const users = [];
@@ -252,4 +281,4 @@ async function browseAllUsers() {
   });
 }
 
-module.exports = { authenticateUser, browseAllUsers, classifyLdapError, resolveEmail };
+module.exports = { authenticateUser, browseAllUsers, classifyLdapError, resolveEmail, bindCandidates, bindServiceAccount };
