@@ -104,6 +104,30 @@ function resolveEmail(o) {
 }
 
 /**
+ * The spellings Active Directory will accept for one identifier.
+ *
+ * A bare sAMAccountName is usually NOT a valid bind DN on its own — AD wants a
+ * UPN, a DOMAIN\user, or a full distinguished name. Anything already carrying an
+ * @ or a backslash is passed through untouched; a full DN (CN=…,DC=…) contains a
+ * comma and no @, so it is left alone too.
+ *
+ * Shared by both binds on purpose. It used to live only inside
+ * authenticateUser(), which meant the login screen forgave a bare username while
+ * LDAP_BIND_DN silently did not — the same value worked in one place and failed
+ * in the other, with nothing on screen to say why.
+ */
+function bindCandidates(identifier, cfg) {
+  const id = String(identifier).trim();
+  if (id.includes('@') || id.includes('\\') || /^[A-Za-z]{2,}=/.test(id)) return [id];
+  return [
+    `${id}@${cfg.defaultUPN}`,
+    `${id}@${cfg.altUPN}`,
+    `${cfg.netbios}\\${id}`,
+    id,
+  ];
+}
+
+/**
  * Authenticates one person against Active Directory.
  *
  *  1. Build the bind spellings AD accepts for a bare username.
@@ -115,18 +139,7 @@ function resolveEmail(o) {
  */
 async function authenticateUser(username, password) {
   const cfg = getLdapConfig();
-
-  const candidates = [];
-  if (username.includes('@') || username.includes('\\')) {
-    candidates.push(username);
-  } else {
-    candidates.push(
-      `${username}@${cfg.defaultUPN}`,
-      `${username}@${cfg.altUPN}`,
-      `${cfg.netbios}\\${username}`,
-    );
-  }
-  if (!candidates.includes(username)) candidates.push(username);
+  const candidates = bindCandidates(username, cfg);
 
   let lastError = null;
 
@@ -174,10 +187,29 @@ async function browseAllUsers() {
     );
   }
 
-  const cfg    = getLdapConfig();
-  const client = createLdapClient(cfg.url);
+  const cfg = getLdapConfig();
 
-  await bindClient(client, bindDN, bindPwd);
+  // Same spelling tolerance the login screen has. LDAP_BIND_DN is typed by hand
+  // into a file, once, by someone who will not be watching a log when it fails.
+  let client = null;
+  let lastError = null;
+  for (const candidate of bindCandidates(bindDN, cfg)) {
+    try {
+      client = await bindClient(createLdapClient(cfg.url), candidate, bindPwd);
+      if (candidate !== bindDN) console.log(`[LDAP] service account bound as "${candidate}"`);
+      break;
+    } catch (err) {
+      lastError = err;
+      client = null;
+    }
+  }
+  if (!client) {
+    const code = classifyLdapError(lastError);
+    throw Object.assign(
+      new Error(`Could not bind the LDAP service account "${bindDN}": ${lastError?.message || 'unknown error'}`),
+      { code }
+    );
+  }
 
   return new Promise((resolve, reject) => {
     const users = [];
