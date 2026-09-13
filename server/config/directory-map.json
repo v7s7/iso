@@ -1,0 +1,17 @@
+{
+  "_note": "How Active Directory maps onto this system. Keys are group CNs in LOWERCASE — the CN only, not the full DN: a group 'CN=ISO_Supervisors,OU=Groups,DC=swd,DC=local' is written here as 'iso_supervisors'. Read on every sign-in, so an edit applies to the next login with no restart. Run 'npm run ad-probe -- <username>' to see the groups a real account actually carries.",
+
+  "_roleGroupMap": "AD group → role. Unlisted groups grant nothing; someone in several mapped groups gets the highest (user < supervisor < power). Anyone who authenticates but matches nothing lands on 'user', which sees only their own requests.",
+  "roleGroupMap": {
+    "iso_supervisors": "supervisor",
+    "iso_power_users": "power"
+  },
+
+  "_adminGroups": "Membership in any of these grants مدير النظام (إدارة النظام screens). Separate from role on purpose: an administrator manages accounts without being handed everyone's request data, and a Power User reads organisation-wide figures without being able to touch an account.",
+  "adminGroups": [
+    "iso_admins"
+  ],
+
+  "_deptGroupMap": "AD group → departments.id. Only a hint, used on a first sign-in when nobody has assigned a department yet. Once the row exists, the stored department wins — an administrator's decision is not overwritten by AD every morning. Leave empty to always assign departments by hand.",
+  "deptGroupMap": {}
+}

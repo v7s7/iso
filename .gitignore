@@ -1,0 +1,22 @@
+# ── Never commit ──────────────────────────────────────────────
+# The signing secret and the Active Directory service-account password live
+# here. Anyone holding JWT_SECRET can mint a token for any account, so this file
+# belongs on each machine and nowhere else. server/.env.example is the template
+# that IS committed.
+server/.env
+.env
+*.env.local
+
+# The database, and the -wal/-shm files SQLite keeps beside it. Each deployment
+# owns its own data; committing it would overwrite the server's records with
+# whatever was last on a laptop.
+server/data/
+
+node_modules/
+
+# ── Noise ─────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+desktop.ini
