@@ -17,13 +17,50 @@ const DEMO  = process.argv.includes('--demo') || RESET;
 
 // The Build 0.8 reference data, carried over unchanged so the seeded system
 // matches what has already been tested against.
+// Every department in the organisation, with the prefix taken from the code
+// docTracking already uses for it — so a service code reads the same way in both
+// systems and nobody has to learn a second set.
+//
+// The five the prototype shipped with keep the prefixes they already have, even
+// where docTracking spells one differently (MSJ here, MSQ there). Their service
+// codes are printed on requests that already exist; renaming the prefix would
+// orphan every one of them.
+//
+// Seeding is idempotent — matched on the prefix — so re-running this after
+// adding a department creates only what is missing and touches nothing else.
 const DEPARTMENTS = [
-  { name: 'قسم الموارد والمعلومات',       prefix: 'IT'  },
-  { name: 'قسم الصيانة',                   prefix: 'MNT' },
-  { name: 'قسم المساجد والإرشاد الديني',   prefix: 'MSJ' },
-  { name: 'مجموعة الاتصال وخدمة العملاء',  prefix: 'COM' },
-  { name: 'قسم الاستثمارات الوقفية',       prefix: 'INV' },
+  // ── The original five ──
+  { name: 'قسم الموارد والمعلومات',                        prefix: 'IT'  },
+  { name: 'قسم الصيانة',                                    prefix: 'MNT' },
+  { name: 'قسم المساجد والإرشاد الديني',                    prefix: 'MSJ' },
+  { name: 'مجموعة الاتصال وخدمة العملاء',                   prefix: 'COM' },
+  { name: 'قسم الاستثمارات الوقفية',                        prefix: 'INV' },
+  // ── The rest of the organisation ──
+  { name: 'قسم المشاريع والخدمات الهندسية',                 prefix: 'ENG' },
+  { name: 'قسم الشؤون القانونية والأملاك الوقفية',          prefix: 'LEG' },
+  { name: 'قسم الحسابات',                                   prefix: 'ACC' },
+  { name: 'قسم الوقف الشرعي والدراسات',                     prefix: 'SHR' },
+  { name: 'قسم تحصيل الإيرادات',                            prefix: 'REV' },
+  { name: 'قسم المشتريات',                                  prefix: 'PRC' },
+  { name: 'قسم الخدمات الإدارية',                           prefix: 'ADM' },
+  { name: 'قسم التخطيط الاستراتيجي ومتابعة المشاريع الوقفية', prefix: 'SP'  },
+  { name: 'قسم المصارف الوقفية وتنمية الوقف',               prefix: 'DIS' },
+  { name: 'مكتب المدير العام',                              prefix: 'DG'  },
+  { name: 'مكتب نائب الرئيس',                               prefix: 'VP'  },
+  { name: 'محامي الإدارة',                                  prefix: 'LC'  },
+  { name: 'مكتب المستشارين',                                prefix: 'ADV' },
 ];
+
+// A department with no services is a department whose staff can sign in, see an
+// empty dropdown, and file nothing. So every newly added one starts with a
+// single catch-all — the same shape قسم الاستثمارات الوقفية already had as
+// INV-001 — and the real catalogue replaces it in إدارة النظام as each
+// department agrees what it actually provides and how long it promises.
+//
+// Five working days is a placeholder, not a promise. It is the number the
+// on-time percentage is measured against, so it should be corrected before a
+// department's figures mean anything.
+const CATCH_ALL_PREFIXES = ['ENG', 'LEG', 'ACC', 'SHR', 'REV', 'PRC', 'ADM', 'SP', 'DIS', 'DG', 'VP', 'LC', 'ADV'];
 
 const SERVICES = [
   { code: 'IT-001',  name: 'الدعم الفني والتقني من الإدارة',              dept: 'IT',  duration: 3  },
@@ -34,6 +71,8 @@ const SERVICES = [
   { code: 'MSJ-002', name: 'اختبار المتقدمين لوظيفة الإمامة والأّذان',      dept: 'MSJ', duration: 10 },
   { code: 'COM-001', name: 'اعداد ونشر مطالعات الصحف اليومية',             dept: 'COM', duration: 1  },
   { code: 'INV-001', name: 'أخرى',                                          dept: 'INV', duration: 5  },
+  // One catch-all per newly added department, so nobody is blocked on day one.
+  ...CATCH_ALL_PREFIXES.map(p => ({ code: `${p}-001`, name: 'أخرى', dept: p, duration: 5 })),
 ];
 
 // Local test accounts — the same four the prototype documents, plus the three

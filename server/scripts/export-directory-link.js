@@ -43,23 +43,46 @@ if (!SOURCE) {
 /**
  * docTracking department → ISO department, by service-code prefix.
  *
- * Four of these are the same department under the same Arabic name. The other
- * three are the judgement calls, and they are the reason this file produces a
- * CSV to read rather than writing straight to the database:
+ * Every department in the organisation, so nobody is left without one. All but
+ * two are the same department under the same Arabic name.
  *
- *   قسم الموارد والمعلومات is broader than any single docTracking department —
- *   it covers IT and HR, and possibly الحسابات. The first two are confirmed;
- *   accounts_dept is marked uncertain so it arrives needing a decision rather
- *   than quietly assigning seven people to a department they may not be in.
+ * The two that are not:
+ *
+ *   community_relations_dept — قسم الاتصال وخدمة العملاء in docTracking,
+ *   مجموعة الاتصال وخدمة العملاء here. Same people, and the ISO name is the one
+ *   already attached to existing requests, so it stays.
+ *
+ *   it_dept and hr_dept BOTH map to قسم الموارد والمعلومات. That is not a
+ *   guess: docTracking carries قسم الموارد والمعلومات as its own department
+ *   (code RI) with zero staff, while people still sit under تقنية المعلومات and
+ *   الموارد البشرية — the newer structure exists on paper there and the data has
+ *   not moved to it. Here it is the live department, and both feed into it.
  */
 const DEPT_MAP = {
-  maintenance_dept:        { prefix: 'MNT', confidence: 'exact',     note: 'same department, same name' },
-  mosques_guidance_dept:   { prefix: 'MSJ', confidence: 'exact',     note: 'same department, same name' },
-  investments_dept:        { prefix: 'INV', confidence: 'exact',     note: 'same department, same name' },
-  community_relations_dept:{ prefix: 'COM', confidence: 'near',      note: 'قسم الاتصال وخدمة العملاء → مجموعة الاتصال وخدمة العملاء' },
-  it_dept:                 { prefix: 'IT',  confidence: 'confirmed', note: 'الموارد والمعلومات covers IT' },
-  hr_dept:                 { prefix: 'IT',  confidence: 'confirmed', note: 'الموارد والمعلومات covers HR' },
-  accounts_dept:           { prefix: 'IT',  confidence: 'UNCERTAIN', note: 'CHECK: is الحسابات part of الموارد والمعلومات? Blank the prefix to exclude these people.' },
+  // ── the original five ──
+  maintenance_dept:            { prefix: 'MNT', confidence: 'exact',     note: 'same department, same name' },
+  mosques_guidance_dept:       { prefix: 'MSJ', confidence: 'exact',     note: 'same department, same name' },
+  investments_dept:            { prefix: 'INV', confidence: 'exact',     note: 'same department, same name' },
+  community_relations_dept:    { prefix: 'COM', confidence: 'near',      note: 'قسم الاتصال وخدمة العملاء → مجموعة الاتصال وخدمة العملاء' },
+  it_dept:                     { prefix: 'IT',  confidence: 'confirmed', note: 'الموارد والمعلومات covers تقنية المعلومات' },
+  hr_dept:                     { prefix: 'IT',  confidence: 'confirmed', note: 'الموارد والمعلومات covers الموارد البشرية' },
+  // ── the rest of the organisation ──
+  engineering_services_dept:   { prefix: 'ENG', confidence: 'exact',     note: 'same department, same name' },
+  legal_affairs_dept:          { prefix: 'LEG', confidence: 'exact',     note: 'same department, same name' },
+  accounts_dept:               { prefix: 'ACC', confidence: 'exact',     note: 'قسم الحسابات — its own department' },
+  sharia_studies_dept:         { prefix: 'SHR', confidence: 'exact',     note: 'same department, same name' },
+  revenue_collection_dept:     { prefix: 'REV', confidence: 'exact',     note: 'same department, same name' },
+  procurement_dept:            { prefix: 'PRC', confidence: 'exact',     note: 'same department, same name' },
+  admin_affairs_dept:          { prefix: 'ADM', confidence: 'exact',     note: 'same department, same name' },
+  strategic_planning_dept:     { prefix: 'SP',  confidence: 'exact',     note: 'same department, same name' },
+  endowment_disbursement_dept: { prefix: 'DIS', confidence: 'exact',     note: 'same department, same name' },
+  director_general_office:     { prefix: 'DG',  confidence: 'exact',     note: 'same office, same name' },
+  board_office:                { prefix: 'VP',  confidence: 'exact',     note: 'same office, same name' },
+  legal_counsel_office:        { prefix: 'LC',  confidence: 'exact',     note: 'same office, same name' },
+  advisors_office:             { prefix: 'ADV', confidence: 'exact',     note: 'same office, same name' },
+  // resources_information_dept (RI) and reception_dept / other_dept are not
+  // listed: the first is the empty shell described above, and the other two
+  // carry no staff in docTracking at all. Add them here if that changes.
 };
 
 // A docTracking MANAGER heads their department, which is what مشرف قسم means
