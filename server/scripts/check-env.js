@@ -28,6 +28,32 @@ if (!fs.existsSync(envPath)) {
   bad('server/.env is missing', 'copy server/.env.example to server/.env and fill it in');
 } else {
   ok('server/.env found');
+
+  // A '#' begins a comment, so an unquoted value containing one is silently cut
+  // short — LDAP_BIND_PASSWORD=Pa55word### reaches the server as "Pa55word".
+  // Nothing reports it: the bind just fails, and it looks exactly like a wrong
+  // password or a misconfigured directory. Worth catching here, where it costs
+  // one line, rather than in an afternoon of debugging Active Directory.
+  //
+  // Trailing whitespace is stripped from an unquoted value too, which matters
+  // for a password that genuinely ends in a space.
+  const raw = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+  for (const line of raw) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/i);
+    if (!m) continue;                      // blank line or a comment
+    const [, key, value] = m;
+    if (!value) continue;                  // deliberately empty
+    const quoted = /^(["']).*\1\s*$/.test(value.trim());
+    if (quoted) continue;
+
+    if (value.includes('#')) {
+      bad(`${key} contains a "#" and is not quoted — everything from the # onwards is being DISCARDED`,
+          `write it as ${key}="${value.trim()}"`);
+    } else if (/\s$/.test(value)) {
+      warn(`${key} ends in whitespace, which is stripped from an unquoted value`,
+           `quote it if the trailing space is part of the value`);
+    }
+  }
 }
 
 // ── JWT ──
