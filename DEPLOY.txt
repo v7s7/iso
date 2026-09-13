@@ -91,11 +91,33 @@ array in scripts/seed.js first, then run `npm run seed` with no --demo.
 The database is NOT in git and never will be — it is this server's own data.
 
 
-5. OPEN THE PORT
-----------------
-Windows Firewall, run as Administrator:
+5. REACHING IT FROM OTHER MACHINES
+----------------------------------
+Do NOT change the firewall to find out whether you need to. Test first — there
+is a good chance nothing needs doing at all.
 
-    netsh advfirewall firewall add rule name="ISO Quality 4100" dir=in action=allow protocol=TCP localport=4100
+Start the server (step 6), then from another machine open:
+
+    http://10.27.17.20:4100
+
+If it loads, the port is already reachable and there is nothing to do here.
+That is the likely outcome: docTracking already serves port 3300 from this same
+machine, so node.exe has been allowed through before, and a Windows rule created
+for a program covers whatever port it listens on.
+
+If it does NOT load, stop and raise it with whoever administers this machine.
+An inbound firewall rule on a government server is their decision and their
+change record — not a line to paste from a deployment note. Tell them:
+
+    program:   node.exe  (the same one docTracking already runs)
+    direction: inbound
+    protocol:  TCP
+    port:      4100
+    scope:     the internal network only — this must not be reachable from
+               outside, it has no TLS
+
+Until then the site still works fully when opened ON the server itself, at
+http://localhost:4100 — enough to finish the setup and test everything.
 
 
 6. START
@@ -103,13 +125,23 @@ Windows Firewall, run as Administrator:
     npm start
 
 Leave the window open. Closing it, signing out, or rebooting stops the site —
-the same arrangement docTracking uses. When that becomes a problem, PM2 fixes
-it in about five minutes:
+the same arrangement docTracking uses, so it is a known quantity here.
+
+Surviving a reboot means running it as a Windows service, and on this machine
+that is a change to raise with whoever administers it rather than something to
+set up from a deployment note: PM2's `pm2 startup` installs a service and needs
+Administrator, and a service that starts before anyone logs in is exactly the
+kind of thing a server owner wants to have approved.
+
+If and when they agree, the shape of it is:
 
     npm install -g pm2
     pm2 start index.js --name iso
     pm2 save
-    pm2 startup      (and run the line it prints, as Administrator)
+    pm2 startup        # prints a command that must be run as Administrator
+
+Until then, the open window is fine — and it has one honest advantage: the site
+stops when nobody is meant to be using it.
 
 
 7. CHECK IT
