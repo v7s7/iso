@@ -126,12 +126,21 @@ CHECK SCRIPTS
                           (deadlines, delay arithmetic, on-time flags, orphans,
                           whether anyone can still reach إدارة النظام)
   npm run ad-probe        what does Active Directory actually return?
-  node scripts/test-security.js
-                          tries to break in with forged tokens, checks the
-                          authorisation and visibility rules. Server must be
+  npm run test-security   forges tokens against the running server and checks
+                          they are refused. Server must be running.
+  npm run test-flow       walks the paths a person actually takes — a new
+                          account through its forced password change, an admin
+                          edit landing mid-session, filing and closing a
+                          request, and whether AD answers. Server must be
                           running.
 
-All four are read-only and safe to run against live data.
+check-env, data-check and ad-probe only read; they are safe against live data
+at any time.
+
+test-security and test-flow need the server running and are for a test or
+staging database. test-security only signs in and is harmless. test-flow
+WRITES: it keeps one account (flow.check@test.local, left deactivated) and
+files one request each run. Do not point it at live records.
 
 
 TEST ACCOUNTS

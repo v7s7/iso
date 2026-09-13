@@ -122,10 +122,18 @@ Sign in as admin@test.local / Test123.
 Then, with the server still running:
 
     npm run data-check
-    node scripts/test-security.js
+    npm run test-flow
+    npm run test-security
 
-Both should end clean. test-security forges tokens against the running server
-and asserts they are refused — run it after any change to the auth code.
+All three should end clean.
+
+  data-check      read-only; safe any time, including on live data.
+  test-security   forges tokens against the running server and asserts they are
+                  refused. Run it after any change to the auth code.
+  test-flow       walks a real user's path end to end. It WRITES — it keeps one
+                  account (flow.check@test.local, left deactivated) and files
+                  one request per run. Run it now, while the database is still
+                  demo data; do not run it once real records are in there.
 
 
 UPDATING LATER
