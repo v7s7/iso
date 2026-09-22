@@ -1,0 +1,129 @@
+ISO Quality System - Production Deployment (Windows Command Prompt)
+===================================================================
+
+This package contains the approved migrated database. DO NOT run "npm run seed".
+Seeding creates a different database and does not load the historical records.
+
+Expected application address:
+  Server:        http://localhost:4100
+  Internal LAN:  http://10.27.17.20:4100
+
+
+1. COPY THE PACKAGE
+-------------------
+Copy the extracted "iso-quality-production" folder to the server, for example:
+
+  C:\Apps\iso-quality-production
+
+Open Command Prompt and enter:
+
+  cd /d C:\Apps\iso-quality-production\server
+
+
+2. INSTALL NODE PACKAGES
+------------------------
+Node.js and npm must already be installed. Check them:
+
+  node -v
+  npm -v
+
+Install exactly the versions recorded in package-lock.json:
+
+  npm ci --omit=dev
+
+
+3. CREATE THE SERVER CONFIGURATION
+----------------------------------
+Create the private .env file from the supplied template:
+
+  copy .env.example .env
+  notepad .env
+
+Keep or set these values:
+
+  PORT=4100
+  CLIENT_URL=http://10.27.17.20:4100
+  LDAP_URL=ldap://10.27.16.5
+  LDAP_BASE_DN=DC=swd,DC=local
+  LDAP_DEFAULT_UPN=swd.bh
+  LDAP_ALT_UPN=swd.local
+  LDAP_NETBIOS=SWD
+  SUPER_ADMIN_USERS=a.alkubaesy
+  ADMIN_DEPT_PREFIX=
+  DB_PATH=./data/iso-quality.db
+  WEEKEND_DAYS=5,6
+
+Generate a new private JWT signing secret:
+
+  npm run new-secret
+
+LDAP_BIND_DN and LDAP_BIND_PASSWORD are optional. They are needed only for
+browsing Active Directory from the Users screen. Normal AD sign-in works
+without them. Never copy the laptop's .env file to the server.
+
+
+4. VERIFY BEFORE STARTING
+-------------------------
+Run:
+
+  npm run check-env
+  npm run data-check
+
+The environment check may show one warning when the optional LDAP browse
+account is blank. The data check must end with "No issues found."
+
+
+5. START THE APPLICATION
+------------------------
+Run:
+
+  npm start
+
+Or double-click START-ISO.cmd. Keep the Command Prompt window open. Then open:
+
+  http://localhost:4100
+
+Test sign-in with a real SWD Active Directory account. The published
+@test.local accounts are disabled in this deployment database.
+
+
+6. VERIFY FROM ANOTHER WORKSTATION
+----------------------------------
+Open:
+
+  http://10.27.17.20:4100
+
+If localhost works but this address does not, ask the server administrator to
+permit inbound TCP port 4100 for the internal network. Do not expose this HTTP
+service to the public internet.
+
+
+7. BACKUP
+---------
+The backup command is safe while the application is running:
+
+  npm run backup
+
+Or double-click BACKUP-ISO.cmd. Backups are written under data\backups and are
+verified automatically with SQLite's integrity check.
+
+
+8. FINAL GO-LIVE CHECK
+----------------------
+  [ ] Real AD user can sign in
+  [ ] Abdulaziz is Supervisor and System Administrator
+  [ ] Normal user sees only their own requests
+  [ ] Supervisor sees only their department requests
+  [ ] Power User sees organisation-wide reports
+  [ ] One request can be created and closed
+  [ ] Historical totals and a sample of request histories are correct
+  [ ] npm run data-check reports no issues
+  [ ] Server backup has been copied to the approved backup location
+
+
+IMPORTANT
+---------
+Do not run npm run seed on this package.
+Do not overwrite server\data\iso-quality.db during later application updates.
+Do not commit or share server\.env; it contains the signing secret and may
+contain an Active Directory service-account password.

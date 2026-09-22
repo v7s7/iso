@@ -1,0 +1,46 @@
+ISO Quality System - Deployment Manifest
+========================================
+Built: 2026-09-20 14:08:49 +03:00
+
+Package
+-------
+Application: ISO Service Request Management System
+Target port: 4100
+Target LAN URL: http://10.27.17.20:4100
+Database: server\data\iso-quality.db
+Database SHA-256: 9A907C081A1BD6C346E6E845FA38213B0633790032B5D7C85248CEDA8D5F5627
+
+Approved data
+-------------
+Departments: 19
+Users: 124 total; 93 active
+Requests: 10,265
+Database integrity: ok
+Data validation: No issues found
+Published test accounts disabled: 8
+Published test account passwords removed: yes
+Saved sessions removed: yes
+
+Production access
+-----------------
+SUPER_ADMIN_USERS template: a.alkubaesy
+Abdulaziz (a.alkubaesy): Supervisor + System Administrator
+Active database administrators: 5
+ADMIN_DEPT_PREFIX: blank
+
+Bundle safety
+-------------
+server\.env is not included
+node_modules is not included
+seed and test-data scripts are not included
+npm seed/test-flow/test-security commands are removed
+The migrated database is included; do not run a seed operation
+
+Validation performed
+--------------------
+Source dependency audit: 0 known vulnerabilities
+Bundle environment check: ready (optional LDAP browse account warning only)
+Bundle data check: passed
+Bundle homepage: HTTP 200
+Bundle health endpoint: HTTP 200
+Published admin test login: rejected with HTTP 401
