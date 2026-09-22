@@ -112,6 +112,7 @@ router.post('/', requireAdmin, (req, res) => {
   if (!name)  return res.status(400).json({ success: false, message: 'الاسم مطلوب.' });
   if (!email) return res.status(400).json({ success: false, message: 'البريد الرسمي مطلوب.' });
   if (!ROLES.includes(role)) return res.status(400).json({ success: false, message: 'دور غير معروف.' });
+  if (!departmentId) return res.status(400).json({ success: false, message: 'القسم مطلوب.' });
   if (password.length < 6) {
     return res.status(400).json({ success: false, message: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل.' });
   }
@@ -164,6 +165,7 @@ router.put('/:id', requireAdmin, (req, res) => {
   const force = req.body?.forcePasswordChange !== undefined ? !!req.body.forcePasswordChange : !!current.force_password_change;
 
   if (!name) return res.status(400).json({ success: false, message: 'الاسم مطلوب.' });
+  if (!deptId) return res.status(400).json({ success: false, message: 'القسم مطلوب.' });
   if (email && db.prepare('SELECT 1 FROM users WHERE email = ? AND id <> ?').get(email, current.id)) {
     return res.status(409).json({ success: false, message: 'البريد الرسمي مستخدم في حساب آخر.' });
   }
@@ -209,6 +211,9 @@ router.post('/:id/toggle', requireAdmin, (req, res) => {
   if (!current) return res.status(404).json({ success: false, message: 'المستخدم غير موجود.' });
 
   const next = current.is_active ? 0 : 1;
+  if (next && !current.department_id) {
+    return res.status(400).json({ success: false, message: 'يجب تعيين قسم قبل تفعيل المستخدم.' });
+  }
   const refusal = refuseUserEdit(req.user, current, { is_active: !!next });
   if (refusal) return res.status(403).json({ success: false, message: refusal });
 
@@ -312,6 +317,7 @@ router.post('/import', requireAdmin, (req, res) => {
     return res.status(400).json({ success: false, message: 'اسم المستخدم والاسم مطلوبان.' });
   }
   if (!ROLES.includes(role)) return res.status(400).json({ success: false, message: 'دور غير معروف.' });
+  if (!departmentId) return res.status(400).json({ success: false, message: 'القسم مطلوب.' });
   if (departmentId && !db.prepare('SELECT 1 FROM departments WHERE id = ?').get(departmentId)) {
     return res.status(404).json({ success: false, message: 'القسم غير موجود.' });
   }

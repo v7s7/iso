@@ -6,12 +6,13 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "seed": "node scripts/seed.js",
     "check-env": "node scripts/check-env.js",
     "data-check": "node scripts/data-check.js",
+    "backup": "node scripts/backup-db.js",
+    "migration-preflight": "node scripts/migration-preflight.js",
+    "migration-schema": "node scripts/apply-migration-prep-schema.js",
+    "test-migration-prep": "node scripts/test-migration-prep.js",
     "ad-probe": "node scripts/ad-probe.js",
-    "test-flow": "node scripts/test-flow.js",
-    "test-security": "node scripts/test-security.js",
     "new-secret": "node scripts/new-secret.js",
     "export-link": "node scripts/export-directory-link.js",
     "import-link": "node scripts/import-directory-link.js"

@@ -158,8 +158,8 @@ router.post('/login', async (req, res) => {
       const info = db.prepare(`
         INSERT INTO users (username, email, password_hash, full_name, department_id,
                            role, is_admin, is_active, title, ad_department, created_by)
-        VALUES (?, NULLIF(?,''), NULL, ?, ?, ?, ?, 1, ?, ?, 'ACTIVE_DIRECTORY')
-      `).run(ad.username, ad.email, ad.name, deptId, role, isAdmin, ad.title || '', ad.department || '');
+        VALUES (?, NULLIF(?,''), NULL, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE_DIRECTORY')
+      `).run(ad.username, ad.email, ad.name, deptId, role, isAdmin, deptId ? 1 : 0, ad.title || '', ad.department || '');
 
       row = loadUser('WHERE u.id = ?', info.lastInsertRowid);
       logAudit({ username: 'SYSTEM', role: 'system' }, 'إنشاء حساب من Active Directory', 'user', ad.username,
@@ -168,6 +168,9 @@ router.post('/login', async (req, res) => {
       console.log(`[Auth] provisioned AD account: ${ad.username} → role=${role}`);
     }
 
+    if (!row.department_id) {
+      return res.status(403).json({ success: false, message: 'لم يُعيَّن قسم لهذا الحساب. يرجى التواصل مع مسؤول النظام.' });
+    }
     const { token, user } = issueSession(row, req);
     logAudit(user, 'تسجيل دخول', 'user', user.username, { newValue: 'Active Directory' }, req.ip);
     console.log(`[Auth] AD login OK: ${user.username} → role=${user.role} admin=${user.admin}`);

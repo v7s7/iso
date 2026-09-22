@@ -73,12 +73,17 @@ function effectiveIsAdmin(row) {
   return Boolean(row.is_admin) || isOverrideAdmin(row) || isAdminDepartment(row);
 }
 
-/** The role a row actually carries. An override admin is also given the
- *  organisation-wide view, otherwise the failsafe account could unlock every
- *  admin screen and still not see the data it is there to fix. */
+/** The role a row actually carries.
+ *
+ * Administration and request visibility are separate permissions. A person
+ * named in SUPER_ADMIN_USERS can manage the system, but still keeps the
+ * stored user/supervisor/power scope selected on the Users screen. This is
+ * especially important for an IT supervisor: granting the administrator
+ * failsafe must not silently expand his request access to the whole
+ * organisation.
+ */
 function effectiveRole(row) {
   if (!row) return 'user';
-  if (isOverrideAdmin(row) || isAdminDepartment(row)) return 'power';
   return ROLES.includes(row.role) ? row.role : 'user';
 }
 

@@ -144,6 +144,12 @@ db.exec(`
     closure_notes       TEXT,
     delay_days          INTEGER NOT NULL DEFAULT 0,
     is_on_time          INTEGER,
+    is_migrated         INTEGER NOT NULL DEFAULT 0,
+    migration_batch_id  INTEGER,
+    legacy_source_row   INTEGER,
+    original_email      TEXT,
+    closure_original_email TEXT,
+    responsible_name_snapshot TEXT,
     created_at          TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_at          TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     FOREIGN KEY(user_id)       REFERENCES users(id),
@@ -236,6 +242,130 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_by TEXT
   );
+
+  -- New operational request numbers must not depend on the greatest imported
+  -- historical code. Historical codes were random and may sit near 999999;
+  -- treating their maximum as a sequence would exhaust the eight-digit format.
+  CREATE TABLE IF NOT EXISTS request_sequences (
+    year_prefix TEXT PRIMARY KEY,
+    last_number INTEGER NOT NULL DEFAULT 0,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    CHECK (length(year_prefix) = 2),
+    CHECK (last_number BETWEEN 0 AND 999999)
+  );
+
+  -- One row per controlled migration attempt. Raw rows remain linked to the
+  -- batch even if they are exceptions and never become canonical requests.
+  CREATE TABLE IF NOT EXISTS migration_batches (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                  TEXT NOT NULL,
+    source_filename       TEXT NOT NULL,
+    source_sha256         TEXT NOT NULL,
+    source_exported_at    TEXT,
+    source_timezone       TEXT,
+    status                TEXT NOT NULL DEFAULT 'planned',
+    raw_request_count     INTEGER NOT NULL DEFAULT 0,
+    raw_closure_count     INTEGER NOT NULL DEFAULT 0,
+    canonical_request_count INTEGER NOT NULL DEFAULT 0,
+    exception_count       INTEGER NOT NULL DEFAULT 0,
+    created_by            TEXT NOT NULL,
+    created_at            TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    completed_at          TEXT,
+    notes                 TEXT,
+    CHECK (status IN ('planned','staged','validated','applied','failed'))
+  );
+
+  CREATE TABLE IF NOT EXISTS migration_request_stage (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id              INTEGER NOT NULL,
+    source_sheet          TEXT NOT NULL,
+    source_row            INTEGER NOT NULL,
+    raw_json              TEXT NOT NULL,
+    req_code_raw          TEXT,
+    req_code_normalized   TEXT,
+    validation_status     TEXT NOT NULL DEFAULT 'pending',
+    exception_codes       TEXT,
+    canonical_request_id  INTEGER,
+    created_at            TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY(batch_id) REFERENCES migration_batches(id),
+    FOREIGN KEY(canonical_request_id) REFERENCES requests(id),
+    UNIQUE(batch_id, source_sheet, source_row),
+    CHECK (validation_status IN ('pending','valid','exception','approved','imported'))
+  );
+
+  CREATE TABLE IF NOT EXISTS migration_closure_stage (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id              INTEGER NOT NULL,
+    source_sheet          TEXT NOT NULL,
+    source_row            INTEGER NOT NULL,
+    raw_json              TEXT NOT NULL,
+    req_code_entered      TEXT,
+    req_code_derived      TEXT,
+    req_code_normalized   TEXT,
+    validation_status     TEXT NOT NULL DEFAULT 'pending',
+    exception_codes       TEXT,
+    is_canonical          INTEGER NOT NULL DEFAULT 0,
+    canonical_request_id  INTEGER,
+    created_at            TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY(batch_id) REFERENCES migration_batches(id),
+    FOREIGN KEY(canonical_request_id) REFERENCES requests(id),
+    UNIQUE(batch_id, source_sheet, source_row),
+    CHECK (validation_status IN ('pending','valid','exception','approved','imported')),
+    CHECK (is_canonical IN (0,1))
+  );
+
+  CREATE TABLE IF NOT EXISTS migration_user_map (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id        INTEGER NOT NULL,
+    old_email       TEXT,
+    historical_name TEXT,
+    office_email    TEXT,
+    target_user_id  INTEGER,
+    decision_status TEXT NOT NULL DEFAULT 'pending',
+    notes           TEXT,
+    FOREIGN KEY(batch_id) REFERENCES migration_batches(id),
+    FOREIGN KEY(target_user_id) REFERENCES users(id),
+    UNIQUE(batch_id, old_email, historical_name),
+    CHECK (decision_status IN ('pending','approved','rejected'))
+  );
+
+  CREATE TABLE IF NOT EXISTS migration_department_map (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id            INTEGER NOT NULL,
+    source_department   TEXT NOT NULL,
+    target_department_id INTEGER,
+    decision_status     TEXT NOT NULL DEFAULT 'pending',
+    notes               TEXT,
+    FOREIGN KEY(batch_id) REFERENCES migration_batches(id),
+    FOREIGN KEY(target_department_id) REFERENCES departments(id),
+    UNIQUE(batch_id, source_department),
+    CHECK (decision_status IN ('pending','approved','rejected'))
+  );
+
+  CREATE TABLE IF NOT EXISTS migration_service_map (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id          INTEGER NOT NULL,
+    source_department TEXT NOT NULL,
+    source_service    TEXT NOT NULL,
+    target_service_id INTEGER,
+    historical_duration INTEGER,
+    decision_status   TEXT NOT NULL DEFAULT 'pending',
+    notes             TEXT,
+    FOREIGN KEY(batch_id) REFERENCES migration_batches(id),
+    FOREIGN KEY(target_service_id) REFERENCES services(id),
+    UNIQUE(batch_id, source_department, source_service),
+    CHECK (historical_duration IS NULL OR historical_duration > 0),
+    CHECK (decision_status IN ('pending','approved','rejected'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_migration_request_batch
+    ON migration_request_stage(batch_id, validation_status);
+  CREATE INDEX IF NOT EXISTS idx_migration_closure_batch
+    ON migration_closure_stage(batch_id, validation_status);
+  CREATE INDEX IF NOT EXISTS idx_migration_request_code
+    ON migration_request_stage(batch_id, req_code_normalized);
+  CREATE INDEX IF NOT EXISTS idx_migration_closure_code
+    ON migration_closure_stage(batch_id, req_code_normalized);
 `);
 
 // ── Migrations for columns added after first release ─────────
@@ -261,6 +391,16 @@ addColumn('users', 'title', 'TEXT');
 // import screen able to suggest a match instead of guessing silently.
 addColumn('users', 'ad_department', 'TEXT');
 
+// Historical-import provenance. Defaults keep every request created through
+// the normal application path operational rather than migrated.
+addColumn('requests', 'is_migrated', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('requests', 'migration_batch_id', 'INTEGER');
+addColumn('requests', 'legacy_source_row', 'INTEGER');
+addColumn('requests', 'original_email', 'TEXT');
+addColumn('requests', 'closure_original_email', 'TEXT');
+addColumn('requests', 'responsible_name_snapshot', 'TEXT');
+db.exec('CREATE INDEX IF NOT EXISTS idx_requests_migration_batch ON requests(migration_batch_id, is_migrated)');
+
 // The session's authoritative link to an account. Existing rows are backfilled
 // from the username they already carry; any that cannot be matched are deleted
 // rather than left with a NULL user_id, because a session that cannot say whose
@@ -282,22 +422,52 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)');
  * The next رقم الطلب. Format is the prototype's: two-digit year + six digits,
  * e.g. 26010001.
  *
- * The prototype drew those six digits at random and re-drew on collision, which
- * works in one browser and breaks the moment two people file at once. This
- * counts instead: the highest code issued this year, plus one. Sequential codes
- * are also what an ISO auditor expects — a gap means a deleted record.
+ * The prototype drew those six digits at random and re-drew on collision. The
+ * application now keeps a separate operational sequence and skips any code
+ * already occupied by imported history. A historical random maximum therefore
+ * cannot force the sequence past the eight-digit format.
  *
  * Callers must run this inside the same transaction as the INSERT; the UNIQUE
  * index on req_code is the real guarantee.
  */
 function nextReqCode() {
   const yy = String(new Date().getFullYear()).slice(-2);
-  const row = db.prepare(
-    "SELECT req_code FROM requests WHERE req_code LIKE ? ORDER BY req_code DESC LIMIT 1"
-  ).get(`${yy}______`);
+  let sequence = db.prepare(
+    'SELECT last_number FROM request_sequences WHERE year_prefix = ?'
+  ).get(yy);
 
-  const n = row ? parseInt(row.req_code.slice(2), 10) + 1 : 1;
-  return yy + String(n).padStart(6, '0');
+  // Upgrade path for an existing installation: seed the operational sequence
+  // from requests created by the app, explicitly excluding imported history.
+  if (!sequence) {
+    const existing = db.prepare(`
+      SELECT MAX(CAST(substr(req_code, 3) AS INTEGER)) AS last_number
+        FROM requests
+       WHERE is_migrated = 0
+         AND length(req_code) = 8
+         AND substr(req_code, 1, 2) = ?
+         AND req_code NOT GLOB '*[^0-9]*'
+    `).get(yy);
+    const last = Number(existing?.last_number || 0);
+    db.prepare('INSERT INTO request_sequences (year_prefix, last_number) VALUES (?, ?)')
+      .run(yy, Math.min(last, 999999));
+    sequence = { last_number: Math.min(last, 999999) };
+  }
+
+  let number = Number(sequence.last_number || 0);
+  while (number < 999999) {
+    number += 1;
+    const candidate = yy + String(number).padStart(6, '0');
+    if (!db.prepare('SELECT 1 FROM requests WHERE req_code = ?').get(candidate)) {
+      db.prepare(`
+        UPDATE request_sequences
+           SET last_number = ?, updated_at = datetime('now','localtime')
+         WHERE year_prefix = ?
+      `).run(number, yy);
+      return candidate;
+    }
+  }
+
+  throw new Error(`No eight-digit request numbers remain for year prefix ${yy}`);
 }
 
 /**
