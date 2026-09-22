@@ -32,6 +32,10 @@ const router = express.Router();
 const JWT_SECRET     = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || DEFAULT_EXPIRY;
 
+// Every account belongs to a department — the Users screen will not save one
+// without it — and sign-in refuses one that somehow has none, by either path.
+const NO_DEPARTMENT = 'لم يُعيَّن قسم لهذا الحساب. يرجى التواصل مع مسؤول النظام.';
+
 /** The user shape the client works with — the same field names the UI already
  *  uses, so the front end does not have to translate. Never includes the hash. */
 function publicUser(row) {
@@ -115,6 +119,9 @@ router.post('/login', async (req, res) => {
     if (!local.is_active) {
       return res.status(401).json({ success: false, message: 'بيانات الدخول غير صحيحة أو الحساب غير فعال.' });
     }
+    if (!local.department_id) {
+      return res.status(403).json({ success: false, message: NO_DEPARTMENT });
+    }
 
     const { token, user } = issueSession(local, req);
     logAudit(user, 'تسجيل دخول', 'user', user.username || user.email, { newValue: 'حساب محلي' }, req.ip);
@@ -169,7 +176,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (!row.department_id) {
-      return res.status(403).json({ success: false, message: 'لم يُعيَّن قسم لهذا الحساب. يرجى التواصل مع مسؤول النظام.' });
+      return res.status(403).json({ success: false, message: NO_DEPARTMENT });
     }
     const { token, user } = issueSession(row, req);
     logAudit(user, 'تسجيل دخول', 'user', user.username, { newValue: 'Active Directory' }, req.ip);
