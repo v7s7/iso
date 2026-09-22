@@ -11,6 +11,7 @@
 // Every list here is already limited to what the caller may see; there is no
 // second filtering step in the browser that could be skipped.
 const express = require('express');
+const zlib    = require('zlib');
 const { db } = require('../db');
 const { verifyToken } = require('../middleware/authMiddleware');
 const { visibilityClause, capabilities, effectiveRole, effectiveIsAdmin } = require('../utils/permissions');
@@ -20,6 +21,22 @@ const { HOLIDAY_TYPES } = require('./holidays');
 const { ROLE_LABELS }   = require('./users');
 
 const router = express.Router();
+
+/** res.json, gzipped when the browser accepts it — which every browser does.
+ *
+ *  This is the one big answer the server gives. For a Power User it is every
+ *  request in the organisation, 10,000+ rows and over 6 MB of repetitive JSON,
+ *  fetched at sign-in and again on every refresh. Node's own zlib rather than
+ *  the compression package, so an update never needs an npm install on the
+ *  server. Asynchronous, so compressing one snapshot does not stall the others. */
+function sendJson(req, res, body) {
+  if (!/\bgzip\b/.test(req.headers['accept-encoding'] || '')) return res.json(body);
+  zlib.gzip(JSON.stringify(body), (err, buf) => {
+    if (err) return res.json(body);
+    res.set({ 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' });
+    res.send(buf);
+  });
+}
 
 // ── GET /api/bootstrap ───────────────────────────────────────
 router.get('/', verifyToken, (req, res) => {
@@ -81,7 +98,7 @@ router.get('/', verifyToken, (req, res) => {
       ${peopleSql} ORDER BY u.full_name
   `).all(...peopleParams);
 
-  res.json({
+  sendJson(req, res, {
     success: true,
     today: today(),
     user: {
