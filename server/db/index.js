@@ -391,6 +391,18 @@ addColumn('users', 'title', 'TEXT');
 // import screen able to suggest a match instead of guessing silently.
 addColumn('users', 'ad_department', 'TEXT');
 
+// Set when مدير النظام gives an Active Directory account a local password on the
+// المستخدمون screen. The password itself is in password_hash like any other, and
+// sign-in needs nothing else — so this column exists for the two questions the
+// hash alone can no longer answer:
+//
+//   • is this row still an AD person? The screen says so, and the import path
+//     needs it: a hash used to be proof of a separate local account, and since
+//     the override it is not.
+//   • was the directory deliberately bypassed for this account? That is worth
+//     being able to read off the row rather than digging through the audit log.
+addColumn('users', 'ad_password_override', 'INTEGER NOT NULL DEFAULT 0');
+
 // Historical-import provenance. Defaults keep every request created through
 // the normal application path operational rather than migrated.
 addColumn('requests', 'is_migrated', 'INTEGER NOT NULL DEFAULT 0');

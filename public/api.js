@@ -103,8 +103,12 @@ const API = (() => {
       try { await post('/api/auth/logout'); } catch {}
       setToken(null);
     },
-    changePassword: (current, password, confirmPassword) =>
-      post('/api/auth/password', { current, password, confirmPassword }),
+    // Only the forced first change — the server refuses this endpoint for any
+    // other reason, because passwords are set by مدير النظام on the المستخدمون
+    // screen. The current password is not asked for: it is the temporary one the
+    // administrator just chose.
+    changePassword: (password, confirmPassword) =>
+      post('/api/auth/password', { password, confirmPassword }),
 
     // ── The snapshot every view renders from ──
     bootstrap: () => get('/api/bootstrap'),
@@ -120,6 +124,10 @@ const API = (() => {
     updateUser:       (id, p)     => put(`/api/users/${id}`, p),
     toggleUser:       (id)        => post(`/api/users/${id}/toggle`),
     resetUserPassword:(id, pw)    => post(`/api/users/${id}/reset-password`, { password: pw }),
+    // Undoes the one above for an AD account: deletes the local password so the
+    // directory decides again. The server refuses it for a row that was never
+    // AD-linked, and when no directory is configured.
+    revertUserToDirectory:(id)    => post(`/api/users/${id}/revert-to-directory`),
 
     createDepartment: (p)         => post('/api/departments', p),
     updateDepartment: (id, p)     => put(`/api/departments/${id}`, p),

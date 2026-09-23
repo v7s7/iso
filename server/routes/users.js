@@ -42,6 +42,10 @@ function toClient(u) {
     active: !!u.is_active,
     forcePasswordChange: !!u.force_password_change,
     isLdap: !u.has_password,
+    // An AD person signing in with a local password مدير النظام set here. The
+    // screen shows it, because "محلي" on its own would read as a local account
+    // and lose the fact that the directory is being bypassed for this row.
+    adPasswordOverride: !!u.ad_password_override,
     // A row whose admin rights come from .env or from the IT department rather
     // than from this screen. The UI marks it, because switching the checkbox
     // off would appear to work and change nothing.
@@ -231,36 +235,157 @@ router.post('/:id/toggle', requireAdmin, (req, res) => {
 });
 
 // ── POST /api/users/:id/reset-password ───────────────────────
-// Sets a temporary password and forces a change at next sign-in.
+//
+// مدير النظام sets the password for ANY account. This is the only way a
+// password changes in this system now — self-service was removed, so the one
+// screen that can do it is this one, and the one person who can reach it is an
+// administrator.
+//
+// On an Active Directory account it does something worth being explicit about:
+// writing password_hash where there was NULL moves the account onto the local
+// sign-in path, because POST /api/auth/login checks a local hash BEFORE it asks
+// the directory. From that point the password typed here is the password that
+// opens this system, and the directory's own password no longer does.
+//
+// What it does NOT do is change anything in Active Directory. The link to the
+// directory is read-only — it authenticates and it browses, and there is no
+// write path in ldapService. The person's Windows and email password is
+// untouched and keeps working everywhere else. The override is local to this
+// application, which is the whole of what it can honestly claim.
 router.post('/:id/reset-password', requireAdmin, (req, res) => {
   const current = db.prepare(`${USER_SQL} WHERE u.id = ?`).get(req.params.id);
   if (!current) return res.status(404).json({ success: false, message: 'المستخدم غير موجود.' });
-
-  if (!current.has_password) {
-    return res.status(400).json({
-      success: false,
-      message: 'هذا حساب Active Directory؛ تُعاد كلمة المرور من الدليل وليس من هنا.',
-    });
-  }
 
   const password = String(req.body?.password || '');
   if (password.length < 6) {
     return res.status(400).json({ success: false, message: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل.' });
   }
 
+  // Read before the write: afterwards every account looks local, and the audit
+  // entry would lose the one fact that makes it worth reading later.
+  const wasLdap = !current.has_password;
+
+  // Sticky: once set it stays set, because the row is still an AD person's row
+  // whether this is the first override or the third reset of the local password
+  // that replaced the directory's.
+  const override = wasLdap || current.ad_password_override ? 1 : 0;
+
   db.prepare(`
     UPDATE users SET password_hash = ?, force_password_change = 1,
+                     ad_password_override = ?,
                      updated_at = datetime('now','localtime')
      WHERE id = ?
-  `).run(bcrypt.hashSync(password, 10), current.id);
+  `).run(bcrypt.hashSync(password, 10), override, current.id);
 
-  // The old password is gone, so the sessions it opened must go with it.
+  // The old password is gone, so the sessions it opened must go with it. For an
+  // account that was signing in through the directory a moment ago this is what
+  // stops the directory password continuing to hold an open session here.
   db.prepare('DELETE FROM sessions WHERE user_id = ?').run(current.id);
 
-  logAudit(req.user, 'إعادة تعيين كلمة المرور', 'user', current.username || current.email,
-    { newValue: 'كلمة مرور مؤقتة + إجبار التغيير عند الدخول' }, req.ip);
+  // An AD override is a different event from an ordinary reset — it changes
+  // which system decides this person's password — so it is recorded as one.
+  logAudit(req.user,
+    wasLdap ? 'تعيين كلمة مرور محلية لحساب Active Directory' : 'إعادة تعيين كلمة المرور',
+    'user', current.username || current.email,
+    {
+      oldValue: wasLdap ? 'الدخول عبر Active Directory' : 'كلمة مرور محلية',
+      newValue: wasLdap
+        ? 'كلمة مرور محلية تتجاوز كلمة مرور الدليل في هذا النظام + إجبار التغيير عند الدخول'
+        : 'كلمة مرور مؤقتة + إجبار التغيير عند الدخول',
+    }, req.ip);
 
-  res.json({ success: true, message: 'تمت إعادة كلمة المرور وسيُطلب من المستخدم تغييرها عند الدخول.' });
+  res.json({
+    success: true,
+    wasLdap,
+    message: wasLdap
+      ? 'تم تعيين كلمة مرور محلية لهذا الحساب. أصبحت هي كلمة المرور المستخدمة للدخول إلى هذا النظام بدلاً من كلمة مرور Active Directory، وسيُطلب تغييرها عند الدخول. (كلمة مرور الحساب في الدليل لم تتغير.)'
+      : 'تمت إعادة كلمة المرور وسيُطلب من المستخدم تغييرها عند الدخول.',
+  });
+});
+
+// ── POST /api/users/:id/revert-to-directory ──────────────────
+//
+// Undoes the override above: the local password is deleted and the account goes
+// back to signing in through Active Directory. The counterpart has to exist,
+// because otherwise an override applied to the wrong row in a table of 124
+// people could only be undone by editing the database by hand.
+//
+// Clearing password_hash is the whole mechanism — a NULL hash is what sends
+// sign-in to the directory — which is also why the refusals below matter more
+// than they look. Each one is a way to leave someone with no password at all in
+// either system:
+//
+//   • a row that was never AD-linked. ad_password_override is set only by the
+//     reset route, and only on a row whose hash was NULL — so the flag is the
+//     record of "this person came from the directory". Without it, this is a
+//     genuine local account and deleting its hash locks it out permanently.
+//   • no directory configured. Sending an account to AD when there is no AD to
+//     go to is the same outcome by a different route.
+//   • the failsafe account named in SUPER_ADMIN_USERS, whose local password is
+//     the way back in when the directory itself is unreachable.
+//
+// A username is required for the same reason: the directory path in
+// routes/auth.js matches on username, and a row without one could not sign in.
+router.post('/:id/revert-to-directory', requireAdmin, (req, res) => {
+  const current = db.prepare(`${USER_SQL} WHERE u.id = ?`).get(req.params.id);
+  if (!current) return res.status(404).json({ success: false, message: 'المستخدم غير موجود.' });
+
+  if (!current.ad_password_override) {
+    return res.status(400).json({
+      success: false,
+      message: 'هذا الحساب ليس حساب Active Directory تم تجاوز كلمة مروره. لا يمكن تحويله إلى الدخول عبر الدليل.',
+    });
+  }
+  if (!ldapEnabled()) {
+    return res.status(400).json({
+      success: false,
+      message: 'لم يتم إعداد الاتصال بـ Active Directory. إلغاء كلمة المرور المحلية الآن يمنع هذا الحساب من الدخول نهائياً.',
+    });
+  }
+  // The failsafe account keeps its local password. ldapEnabled() above says the
+  // directory is CONFIGURED, not that it is answering — and a local password on
+  // the one account that cannot be demoted from a screen is exactly what keeps
+  // the system usable on the morning the directory is down. Same reasoning as
+  // the protections in utils/permissions.js: this account is managed in the
+  // server's own settings, not from a table of rows.
+  if (isOverrideAdmin(current)) {
+    return res.status(400).json({
+      success: false,
+      message: 'هذا الحساب محمي في إعدادات الخادم، وكلمة مروره المحلية هي وسيلة الدخول الاحتياطية عند تعذّر الاتصال بالدليل.',
+    });
+  }
+  if (!current.username) {
+    return res.status(400).json({
+      success: false,
+      message: 'لا يوجد اسم مستخدم لهذا الحساب، والدخول عبر Active Directory يتم باسم المستخدم.',
+    });
+  }
+
+  // force_password_change is cleared with the hash: it refers to a temporary
+  // local password that no longer exists, and leaving it set would block every
+  // endpoint behind a change screen the account can no longer use.
+  db.prepare(`
+    UPDATE users SET password_hash = NULL, ad_password_override = 0,
+                     force_password_change = 0,
+                     updated_at = datetime('now','localtime')
+     WHERE id = ?
+  `).run(current.id);
+
+  // Sessions opened with the local password go with it, exactly as on a reset.
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(current.id);
+
+  logAudit(req.user, 'إعادة الحساب إلى الدخول عبر Active Directory', 'user',
+    current.username || current.email,
+    {
+      oldValue: 'كلمة مرور محلية تتجاوز كلمة مرور الدليل',
+      newValue: 'الدخول عبر Active Directory',
+    }, req.ip);
+
+  res.json({
+    success: true,
+    message: 'تم إلغاء كلمة المرور المحلية. يسجّل هذا الحساب الدخول الآن بكلمة مروره في Active Directory.',
+    user: toClient(db.prepare(`${USER_SQL} WHERE u.id = ?`).get(current.id)),
+  });
 });
 
 // ── GET /api/users/directory ─────────────────────────────────
@@ -325,7 +450,13 @@ router.post('/import', requireAdmin, (req, res) => {
   const existing = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
 
   if (existing) {
-    if (existing.password_hash) {
+    // A hash used to be proof that this username belonged to a separate local
+    // account, and refusing was right. Since مدير النظام can give an AD account
+    // a local password, a hash on an overridden row means the opposite — it IS
+    // this AD person — so the refusal is limited to the case it was written for.
+    // The override is left in place: re-importing fixes the role and department
+    // from the directory, and is not a decision about which password signs in.
+    if (existing.password_hash && !existing.ad_password_override) {
       return res.status(409).json({
         success: false,
         message: 'هذا الاسم يخص حساباً محلياً بكلمة مرور. احذف التعارض أو استخدم اسماً آخر.',

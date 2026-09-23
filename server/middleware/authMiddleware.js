@@ -26,6 +26,7 @@ const { DEFAULT_EXPIRY, parseExpirySeconds } = require('../utils/expiry');
 const USER_SQL = `
   SELECT u.id, u.username, u.email, u.full_name, u.role, u.is_admin, u.is_active,
          u.department_id, u.force_password_change, u.title, u.last_login_at,
+         u.ad_password_override,
          (u.password_hash IS NOT NULL) AS has_password,
          d.name AS department_name, d.prefix AS department_prefix
     FROM users u

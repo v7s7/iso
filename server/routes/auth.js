@@ -51,6 +51,7 @@ function publicUser(row) {
     active:        !!row.is_active,
     forcePasswordChange: !!row.force_password_change,
     isLdap:        !row.has_password,
+    adPasswordOverride: !!row.ad_password_override,
   };
 }
 
@@ -217,18 +218,38 @@ router.post('/logout', verifyToken, (req, res) => {
 });
 
 // ── POST /api/auth/password ──────────────────────────────────
-// Self-service change. Reachable while force_password_change is set — it is the
-// one thing such an account must be able to do.
+//
+// The forced first change, and nothing else.
+//
+// Passwords in this system are set by مدير النظام, on POST /api/users/:id/
+// reset-password. There is no longer a self-service change: the screen was
+// removed from the app, and this endpoint enforces the same rule, because a
+// route that still accepts the request is the rule — the missing menu item is
+// only a courtesy.
+//
+// What stays open is the one case that has to: an administrator has just set a
+// temporary password, force_password_change is on, and the account is locked out
+// of every other endpoint by blockUntilPasswordChanged until this succeeds. If
+// this were closed too, such an account could not do anything at all.
 router.post('/password', verifyToken, (req, res) => {
-  const { current, password, confirmPassword } = req.body || {};
+  const { password, confirmPassword } = req.body || {};
 
   const row = db.prepare('SELECT id, username, email, password_hash, force_password_change FROM users WHERE id = ?')
     .get(req.user.id);
 
-  if (!row?.password_hash) {
-    // An AD account's password lives in Active Directory. Changing it here would
-    // create a second, divergent password for the same person — so it is
-    // refused, with the place that can actually change it.
+  if (!row?.force_password_change) {
+    // Not under a forced change, so this is an ordinary self-service attempt.
+    // Refused, with the person who can actually do it.
+    return res.status(403).json({
+      success: false,
+      message: 'تغيير كلمة المرور يتم عن طريق مدير النظام. يرجى التواصل معه.',
+    });
+  }
+
+  if (!row.password_hash) {
+    // force_password_change on a row with no hash should not happen — the flag
+    // is only ever set together with one. Refused rather than crashed on the
+    // bcrypt compare below.
     return res.status(400).json({
       success: false,
       message: 'كلمة مرور هذا الحساب تُدار في Active Directory ولا يمكن تغييرها من هنا.',
@@ -241,14 +262,11 @@ router.post('/password', verifyToken, (req, res) => {
     return res.status(400).json({ success: false, message: 'كلمتا المرور غير متطابقتين.' });
   }
 
-  // The current password is required — EXCEPT when an administrator has just
-  // reset it, where the "current" one is the temporary the administrator chose
-  // and asking for it again proves nothing.
-  if (!row.force_password_change) {
-    if (!current || !bcrypt.compareSync(current, row.password_hash)) {
-      return res.status(401).json({ success: false, message: 'كلمة المرور الحالية غير صحيحة.' });
-    }
-  }
+  // The current password is NOT asked for. The only way to reach this line is
+  // under a forced change, where the current password is the temporary one the
+  // administrator chose and probably said out loud — asking for it back proves
+  // nothing about who is typing. It is refused as the NEW password, though:
+  // "change this temporary" has to mean it stops working.
   if (bcrypt.compareSync(password, row.password_hash)) {
     return res.status(400).json({ success: false, message: 'كلمة المرور الجديدة مطابقة للحالية.' });
   }
@@ -265,9 +283,8 @@ router.post('/password', verifyToken, (req, res) => {
   const killed = db.prepare('DELETE FROM sessions WHERE user_id = ? AND jti <> ?')
     .run(row.id, req.user.jti).changes;
 
-  logAudit(req.user, row.force_password_change ? 'تغيير كلمة المرور الإجباري' : 'تغيير كلمة المرور',
-    'user', row.username || row.email,
-    { oldValue: row.force_password_change ? 'كلمة مرور مؤقتة' : '', newValue: 'تم التغيير' }, req.ip);
+  logAudit(req.user, 'تغيير كلمة المرور الإجباري', 'user', row.username || row.email,
+    { oldValue: 'كلمة مرور مؤقتة', newValue: 'تم التغيير' }, req.ip);
 
   res.json({ success: true, message: 'تم تغيير كلمة المرور.', otherSessionsEnded: killed });
 });

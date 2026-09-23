@@ -198,6 +198,12 @@ function capabilities(user) {
     manageHolidays:    !!user?.is_admin,
     viewAudit:         !!user?.is_admin,
     browseDirectory:   !!user?.is_admin,
+    // Passwords are an administrator's job, for every account including his own.
+    // There is no self-service change any more, so nobody is handed a "change my
+    // own password" screen — the only password an ordinary user ever types into
+    // this system is the temporary one, on the forced-change screen.
+    managePasswords:   !!user?.is_admin,
+    changeOwnPassword: false,
     scope:             user?.role === 'power' ? 'organisation'
                      : user?.role === 'supervisor' ? 'department'
                      : 'self',

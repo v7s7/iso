@@ -14,7 +14,7 @@ const express = require('express');
 const zlib    = require('zlib');
 const { db } = require('../db');
 const { verifyToken } = require('../middleware/authMiddleware');
-const { visibilityClause, capabilities, effectiveRole, effectiveIsAdmin } = require('../utils/permissions');
+const { visibilityClause, capabilities, effectiveRole, effectiveIsAdmin, isOverrideAdmin } = require('../utils/permissions');
 const { today, loadHolidays, isLate, currentDelayDays, isDueSoon } = require('../utils/workdays');
 const { DELAY_REASONS } = require('./requests');
 const { HOLIDAY_TYPES } = require('./holidays');
@@ -92,6 +92,7 @@ router.get('/', verifyToken, (req, res) => {
   const people = db.prepare(`
     SELECT u.id, u.username, u.full_name, u.email, u.department_id, u.role,
            u.is_admin, u.is_active, u.force_password_change, u.last_login_at,
+           u.ad_password_override,
            (u.password_hash IS NOT NULL) AS has_password,
            d.name AS department_name, d.prefix AS department_prefix
       FROM users u LEFT JOIN departments d ON d.id = u.department_id
@@ -138,6 +139,14 @@ router.get('/', verifyToken, (req, res) => {
       role: effectiveRole(u), admin: effectiveIsAdmin(u), active: !!u.is_active,
       forcePasswordChange: !!u.force_password_change,
       isLdap: !u.has_password,
+      // Whose password opens this system. The المستخدمون screen renders from this
+      // snapshot, so the column it shows has to be here and not only on
+      // GET /api/users.
+      adPasswordOverride: !!u.ad_password_override,
+      // Protected in the server's settings: the screen hides the actions the
+      // server would refuse on this row, rather than offering a button that
+      // cannot work.
+      isProtected: isOverrideAdmin(u),
       lastLoginAt: u.last_login_at || '',
     })),
     holidays: db.prepare('SELECT * FROM holidays ORDER BY start_date DESC').all().map(h => ({

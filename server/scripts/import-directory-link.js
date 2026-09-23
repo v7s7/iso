@@ -124,7 +124,8 @@ for (const r of rows) {
 
   const existing = db.prepare(`
     SELECT u.id, u.username, u.full_name, u.department_id, u.role, u.is_active,
-           (u.password_hash IS NOT NULL) AS has_password, d.name AS department_name
+           (u.password_hash IS NOT NULL) AS has_password, u.ad_password_override,
+           d.name AS department_name
       FROM users u LEFT JOIN departments d ON d.id = u.department_id
      WHERE u.username = ?
   `).get(username);
@@ -138,7 +139,11 @@ for (const r of rows) {
       id: existing.id, username, fullName, email, deptId: dept.id, deptName: dept.name, role,
       from: `${existing.department_name || 'no department'} / ${existing.role}${existing.is_active ? '' : ' / inactive'}`,
       to:   `${dept.name} / ${role}`,
-      isLocal: !!existing.has_password,
+      // A hash no longer means "a separate local account": it may be an AD row
+      // مدير النظام gave a local password to. Only the first is worth flagging
+      // here, since this script updates department and role and leaves the
+      // password alone either way.
+      isLocal: !!existing.has_password && !existing.ad_password_override,
     });
   }
 }
