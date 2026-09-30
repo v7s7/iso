@@ -190,6 +190,16 @@ database or -wal in server\data that is older than the one in use, or about a
 newer one with fewer requests or users (a new empty database, say): do not move
 those next to the live database, move them out of the code folder.
 
+It also refuses to start when the account of its window may not open the data
+folder ("DATA_DIR is set, but this process may not read E:\Apps\data\iso."),
+or may read the database but not change it ("This process cannot write where
+the data is kept: E:\Apps\data\iso."). Started anyway, it would answer and
+fail every sign-in. Both name the account ("running as ..."): compare it with
+whoami in the window the server is always started from. Never remove the
+DATA_DIR line for either, the database is there. Start the server from a window
+of the right kind, or have IT give that account Modify on E:\Apps\data\iso.
+npm run check-env and npm run data-check refuse the same way in such a window.
+
 Keep the DATA_DIR line. Without it the server refuses to start while
 E:\Apps\data\iso holds the database and server\data does not, or while
 server\data.moved-<date> shows the data was moved, rather than start on a new

@@ -25,7 +25,11 @@
 // deliberate, because scripts/test-migration-prep.js points DB_PATH at a scratch
 // file and must not pick up the server's DATA_DIR. server/.env is read here only
 // to notice a run that did not load it (see checkDataLocation).
+//
+// It also answers, once the database is open, whether this process may write
+// there (cannotWrite): see "Can this process write there?" below.
 const fs   = require('fs');
+const os   = require('os');
 const path = require('path');
 
 const SERVER_DIR = path.join(__dirname, '..');
@@ -69,8 +73,39 @@ function isInside(dir, file) {
   return Boolean(rel) && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
+// A file's size in bytes, or -1 when there is no such file, or when it cannot
+// even be looked at (see deniedCode, which tells the two apart).
 function sizeOf(file) {
   try { return fs.statSync(file).size; } catch { return -1; }
+}
+
+// EPERM (Windows) or EACCES when this process may not even look at the path,
+// else null. Such a path says nothing about whether the file is there, so it
+// must never be read as missing. IT's folders under E:\Apps\data give Users and
+// Authenticated Users no rights at all, so a window whose account has no grant
+// of its own on E:\Apps\data\iso sees nothing in it. Read as missing, as it
+// was until the 30 Sep rehearsal showed it, the refusal said there was no
+// database and offered to remove DATA_DIR, which only moved the problem.
+const DENIED = new Set(['EPERM', 'EACCES']);
+function deniedCode(p) {
+  try { fs.statSync(p); return null; } catch (e) { return DENIED.has(e.code) ? e.code : null; }
+}
+
+// The first of these paths this process may not look at, as { where, code }.
+function firstDenied(...paths) {
+  for (const where of paths) {
+    const code = deniedCode(where);
+    if (code) return { where, code };
+  }
+  return null;
+}
+
+// The account this process runs as, the way whoami prints it, for the owner to
+// compare with the one IT set the data folder up for.
+function account() {
+  let name = '';
+  try { name = os.userInfo().username; } catch { name = process.env.USERNAME || process.env.USER || 'unknown'; }
+  return process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${name}` : name;
 }
 
 function mtimeOf(file) {
@@ -146,9 +181,31 @@ function movedAwayMarks(p) {
 // Active Directory, so the site would come up looking as if every request had
 // gone, the requests filed meanwhile would land in that empty database, and
 // putting DATA_DIR back afterwards would find two databases to choose between.
+//
+// A folder this process may not look at is never taken for an empty one: not
+// server/data (a new database would be made beside the real one), and not the
+// planned folder once server/data has no database (the data may well be there).
+// Before the move server/data holds the database, so a planned folder IT made
+// for the move, which this window may not open, changes nothing.
 function checkUnset(p, warnings) {
   const here      = sizeOf(p.legacyDbPath) > 0;
-  const elsewhere = !samePath(p.plannedDir, p.legacyDir) && sizeOf(p.plannedDbPath) > 0;
+  const apart     = !samePath(p.plannedDir, p.legacyDir);
+  const elsewhere = apart && sizeOf(p.plannedDbPath) > 0;
+  const hereBlocked    = here ? null : firstDenied(p.legacyDbPath, p.legacyDir);
+  const plannedBlocked = here || elsewhere || !apart ? null : firstDenied(p.plannedDbPath, p.plannedDir);
+  const cannotLook = plannedBlocked
+    ? [`This process may not read ${p.plannedDir} (${plannedBlocked.code}), running as ${account()}, so it cannot tell whether the database is there.`]
+    : [];
+  if (hereBlocked) {
+    return {
+      refuse: [
+        `This process may not read ${hereBlocked.where} (${hereBlocked.code}).`,
+        `Refusing to start, so that no new empty database is made beside the real one. Running as ${account()}.`,
+        `Start it from a window whose account may change ${p.legacyDir}, of the kind it is always started from.`,
+      ],
+      warnings,
+    };
+  }
   if (elsewhere && !here) {
     return {
       refuse: [
@@ -175,7 +232,19 @@ function checkUnset(p, warnings) {
           `DATA_DIR is not set in server/.env, and there is no database in ${p.legacyDir}, but the data was moved out of it: ${marks.map(m => path.basename(m)).join(', ')} is beside it.`,
           `Refusing to start, so that no new empty database is made in ${p.legacyDir}.`,
           'Add DATA_DIR to server/.env, without quotes, naming the folder the data was moved to, then start again.',
+          ...cannotLook,
           `To undo the move instead, put the files back into ${p.legacyDir} first.`,
+        ],
+        warnings,
+      };
+    }
+    if (plannedBlocked) {
+      return {
+        refuse: [
+          `DATA_DIR is not set in server/.env, there is no database in ${p.legacyDir}, and this process may not read ${p.plannedDir}.`,
+          `Refusing to start, so that no new empty database is made in ${p.legacyDir}.`,
+          ...cannotLook,
+          `If the data was moved there, add this line to server/.env, without quotes, and start it from a window whose account may change that folder: DATA_DIR=${p.plannedDir}`,
         ],
         warnings,
       };
@@ -239,6 +308,29 @@ function checkDataLocation(p = resolveDataPaths()) {
   const legacyIsLive = samePath(p.dbPath, p.legacyDbPath);
   const legacyDb     = !legacyIsLive && fs.existsSync(p.legacyDbPath);
   const oldSet       = `${DB_FILE}, ${DB_FILE}-wal and ${DB_FILE}-shm`;
+
+  // A window whose account may not open the folder sees no database in it, and
+  // that is not a missing database. Right after a move that printed PASS, the
+  // database is there. Saying it was missing, and offering to remove DATA_DIR,
+  // led in the 30 Sep rehearsal to a start without DATA_DIR, which then
+  // (rightly) refused as well and left the site down. So it says what it is,
+  // names the account to compare with the one IT was told, and says never to
+  // remove DATA_DIR for it.
+  const blocked = sizeOf(p.dbPath) > 0 ? null : firstDenied(p.dbPath, liveDir);
+  if (blocked) {
+    const folder = p.dbPathOverride ? liveDir : p.dataDir;
+    const who = account();
+    return {
+      refuse: [
+        `DATA_DIR is set, but this process may not read ${folder}.`,
+        `Could not read ${blocked.where} (${blocked.code}), running as ${who}.`,
+        'Refusing to start. The database may well be there: this is not a missing database.',
+        `Do NOT remove DATA_DIR from server/.env, and move nothing: without DATA_DIR the server would look for the database in ${p.legacyDir} instead.`,
+        `Start it from a window whose account may change ${folder}, of the kind it is always started from, or have ${who} given Modify on ${folder}, then start again.`,
+      ],
+      warnings,
+    };
+  }
 
   // 0 bytes is what a failed copy, or a tool that opened a missing file, leaves.
   // SQLite takes it for an empty database and would build a new schema in it,
@@ -350,6 +442,106 @@ function checkDataLocation(p = resolveDataPaths()) {
   return { refuse: null, warnings };
 }
 
+// ── Can this process write there? ────────────────────────────
+//
+// SQLite opens a database it may read but not write without a word: it falls
+// back to read-only, and every write fails afterwards with SQLITE_READONLY.
+// The server then prints "SQLite ready", /api/health answers, check-env and the
+// backup tool's check (which opens the database read-only on purpose) pass, and
+// the first sign-in fails, because signing in writes. The 30 Sep rehearsal of
+// the SWAPP move showed exactly that for وصل, from a window whose account could
+// read the new data folder but not change it, and ISO did the same. So
+// db/index.js asks here straight after the open, before the schema and before
+// "SQLite ready", and refuses to start rather than serve a site that cannot save
+// anything. Every script that loads db/index.js asks too: they migrate the
+// database as the server does, which is why the runbook already runs check-env
+// and data-check in a window of the same kind as ISO's own.
+//
+// Nothing is kept: the database check makes one change inside a transaction and
+// rolls it back, and the folder check creates an empty file and removes it.
+
+// The SQLite answers that mean "not allowed to write here". SQLITE_BUSY is not
+// among them: another connection holding the write lock (the running server,
+// while check-env runs) proves nothing about the rights of this one.
+const NOT_WRITABLE = /^SQLITE_(READONLY|CANTOPEN|PERM|IOERR)/;
+const isNotWritable = err => !!err && NOT_WRITABLE.test(String(err.code || ''));
+
+// BEGIN IMMEDIATE alone proves nothing: in WAL mode it takes the write lock and
+// succeeds on a database SQLite opened read-only, and only the first change
+// fails (tried on this PC with the read-only attribute on the file). So one
+// change is made, user_version set to the value it already has (nothing in ISO
+// reads it), and rolled back. In WAL mode a change reaches the -wal only on
+// commit, so no file is written. BEGIN IMMEDIATE waits for a lock held
+// elsewhere no longer than the connection's busy timeout (better-sqlite3's
+// default, 5 s), and SQLITE_BUSY after that counts as writable.
+function checkDatabaseWrite(db) {
+  try {
+    const version = Number(db.pragma('user_version', { simple: true })) || 0;
+    db.exec('BEGIN IMMEDIATE');
+    try { db.pragma(`user_version = ${version}`); } finally { if (db.inTransaction) db.exec('ROLLBACK'); }
+    return null;
+  } catch (err) {
+    try { if (db.inTransaction) db.exec('ROLLBACK'); } catch { /* nothing to roll back */ }
+    return isNotWritable(err) ? `${err.code} (${err.message})` : null;
+  }
+}
+
+// SQLite makes its -wal, -shm and -journal files beside the database, and
+// npm run backup writes into DATA_DIR\backups, so the folder must take a new
+// file as well. A read-only attribute on a folder is not a refusal: Windows
+// ignores it for folders, and so does this check.
+function checkFolderWrite(dir) {
+  if (!fs.existsSync(dir)) return null;
+  const probe = path.join(dir, `.write-check-${process.pid}-${Date.now()}.tmp`);
+  try {
+    fs.writeFileSync(probe, '', { flag: 'wx' });
+  } catch (err) {
+    return err.code || err.message;
+  }
+  try { fs.unlinkSync(probe); } catch { /* an antivirus holding it a moment; it is empty */ }
+  return null;
+}
+
+/**
+ * Everything this process cannot write, as [{ where, why }], or [] when it can
+ * write it all: the database, the folder it is in, and DATA_DIR when that is
+ * another folder. With DATA_DIR unset only the database's own folder is tried,
+ * so a script pointing DB_PATH at a scratch file never touches server/data.
+ */
+function cannotWrite(db, p = PATHS) {
+  const problems = [];
+  const why = checkDatabaseWrite(db);
+  if (why) problems.push({ where: p.dbPath, why });
+  const folders = [path.dirname(p.dbPath)];
+  if (p.usingDataDir && !samePath(p.dataDir, folders[0])) folders.push(p.dataDir);
+  for (const dir of folders) {
+    const code = checkFolderWrite(dir);
+    if (code) problems.push({ where: dir, why: code });
+  }
+  return problems;
+}
+
+/**
+ * The lines db/index.js prints before it exits, the same shape as the other
+ * refusals: what is wrong, why it refuses, then what to do. DATA_DIR is named
+ * only when it is set: the owner's first thought on the night of the move must
+ * not be to remove it, which would only make the server look in server/data.
+ */
+function writeRefusal(problems, p = PATHS) {
+  const folder = path.dirname(p.dbPath);
+  const who = account();
+  return [
+    `This process cannot write where the data is kept: ${folder}.`,
+    'Refusing to start, so that the site does not come up unable to save anything: every sign-in and every change would fail with SQLITE_READONLY.',
+    ...problems.map(x => `Could not write ${x.where}: ${x.why}`),
+    `Running as ${who}.`,
+    ...(p.usingDataDir
+      ? [`Do NOT remove DATA_DIR from server/.env, and move nothing: the database is there, and without DATA_DIR the server would look for it in ${p.legacyDir} instead.`]
+      : []),
+    `Start it from a window whose account may change ${folder}, of the kind it is always started from, or have ${who} given Modify on ${folder}, then start again.`,
+  ];
+}
+
 const PATHS = resolveDataPaths();
 
 module.exports = {
@@ -361,4 +553,7 @@ module.exports = {
   DATA_DIR_SET:    PATHS.usingDataDir,
   resolveDataPaths,
   checkDataLocation,
+  cannotWrite,
+  writeRefusal,
+  isNotWritable,
 };

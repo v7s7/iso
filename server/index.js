@@ -32,6 +32,9 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.startsWith('replace_with')
 
 // Requiring the db module is what creates or migrates the file on disk, so it
 // happens before any route can run a query against a table that isn't there.
+// It is also where the server refuses to start when this window may not read
+// the data folder, or may read the database but not write it: started anyway,
+// it would answer /api/health and fail every sign-in (config/dataDir.js).
 require('./db');
 
 const authRoutes        = require('./routes/auth');

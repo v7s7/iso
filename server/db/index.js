@@ -13,21 +13,26 @@ const fs       = require('fs');
 const Database = require('better-sqlite3');
 
 // DATA_DIR, or server/data when it is unset; DB_PATH overrides the file alone.
-const { DB_PATH, DATA_DIR_SET, checkDataLocation } = require('../config/dataDir');
+const {
+  DB_PATH, DATA_DIR_SET, checkDataLocation, cannotWrite, writeRefusal, isNotWritable,
+} = require('../config/dataDir');
+
+function refuse(lines) {
+  console.error(`[DB] FATAL: ${lines[0]}`);
+  lines.slice(1).forEach(l => console.error(`            ${l}`));
+  process.exit(1);
+}
 
 // Checked before the open, because opening a missing file is what creates it.
 // config/dataDir.js explains why DATA_DIR turns a missing database into a
-// refusal rather than a fresh start.
+// refusal rather than a fresh start, and a folder this process may not read into
+// a refusal that says so rather than one that calls the database missing.
 const location = checkDataLocation();
 for (const lines of location.warnings) {
   console.warn(`[DB] WARNING: ${lines[0]}`);
   lines.slice(1).forEach(l => console.warn(`              ${l}`));
 }
-if (location.refuse) {
-  console.error(`[DB] FATAL: ${location.refuse[0]}`);
-  location.refuse.slice(1).forEach(l => console.error(`            ${l}`));
-  process.exit(1);
-}
+if (location.refuse) refuse(location.refuse);
 
 // Without DATA_DIR this is the old behaviour: create the folder and, on a first
 // start, the database. Said out loud, so a server that has lost track of its
@@ -40,7 +45,23 @@ if (!fs.existsSync(DB_PATH)) console.warn(`[DB] No database at ${DB_PATH}. Creat
 
 // fileMustExist backs up the check above: with DATA_DIR set, nothing in this
 // file may create the database.
-const db = new Database(DB_PATH, { fileMustExist: DATA_DIR_SET });
+//
+// Then, before the schema and long before "SQLite ready", make sure this
+// process may WRITE there. SQLite opens a database it may only read without a
+// word, and the site would start, answer /api/health and fail every sign-in
+// with SQLITE_READONLY (config/dataDir.js, cannotWrite). An open that fails
+// outright for the same reason ends in the same refusal.
+let db;
+try {
+  db = new Database(DB_PATH, { fileMustExist: DATA_DIR_SET });
+} catch (err) {
+  if (!isNotWritable(err)) throw err;
+  refuse(writeRefusal([{ where: DB_PATH, why: `${err.code} (${err.message})` }]));
+}
+// Not closed before the exit: a close may checkpoint, and the refusal is meant
+// to leave every file as it found it.
+const unwritable = cannotWrite(db);
+if (unwritable.length) refuse(writeRefusal(unwritable));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
