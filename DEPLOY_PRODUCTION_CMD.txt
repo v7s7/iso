@@ -158,10 +158,19 @@ Start the application. Its window must show:
 
   [DB] SQLite ready: E:\Apps\data\iso\iso-quality.db
 
-With DATA_DIR set, the server refuses to start if the database is not in that
-folder, rather than create a new empty one, and it warns if an old database is
-still in server\data. To go back, stop the server, move the files back into
-server\data and remove the DATA_DIR line.
+With DATA_DIR set, the server refuses to start rather than run on the wrong
+data:
+  - if the database is not in that folder, or is empty;
+  - if iso-quality.db-wal was left in server\data and holds changes newer than
+    the moved database;
+  - if a database still in server\data changed more recently than the one in
+    DATA_DIR (for example when only the .db was copied).
+Each refusal says which files to move where. It only warns about an old
+database or -wal in server\data that is older than the one in use: do not move
+those next to the live database, move them out of the code folder.
+
+To go back, stop the server, move the files back into server\data and remove
+the DATA_DIR line.
 
 
 IMPORTANT

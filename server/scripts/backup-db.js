@@ -1,9 +1,10 @@
 // Create a consistent SQLite backup while the application may be running.
 // better-sqlite3 uses SQLite's online backup API, so committed WAL data is
 // included and the source database is never modified.
-require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+// server/.env by its full path, so a run from another folder still finds DATA_DIR.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const Database = require('better-sqlite3');
 // The same database the server opens, and the backups beside it in the data
 // folder (DATA_DIR when set), so they are covered by whatever backs that up.

@@ -11,7 +11,24 @@ const cors       = require('cors');
 const bodyParser = require('body-parser');
 const path       = require('path');
 const fs         = require('fs');
-require('dotenv').config();
+// By its full path, not from whatever folder the command was started in. DATA_DIR
+// is set there, and a start that missed it would look for the database in
+// server/data instead of the data folder.
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
+// Refusing to start is the right response to a missing signing secret. The
+// alternative, a default, means every deployment that forgot to set one
+// shares a secret that is printed in this file, and any of them can mint a
+// valid token for any other.
+//
+// Checked before the database is opened, so a server/.env that did not load
+// stops the start here rather than after db/index.js has touched the data.
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.startsWith('replace_with')) {
+  console.error('[Server] FATAL: JWT_SECRET is not set in server/.env. Refusing to start.');
+  console.error('         Generate one with:');
+  console.error('         node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"');
+  process.exit(1);
+}
 
 // Requiring the db module is what creates or migrates the file on disk, so it
 // happens before any route can run a query against a table that isn't there.
@@ -28,17 +45,6 @@ const auditRoutes       = require('./routes/audit');
 
 const app  = express();
 const PORT = process.env.PORT || 4100;
-
-// Refusing to start is the right response to a missing signing secret. The
-// alternative — a default — means every deployment that forgot to set one
-// shares a secret that is printed in this file, and any of them can mint a
-// valid token for any other.
-if (!process.env.JWT_SECRET || process.env.JWT_SECRET.startsWith('replace_with')) {
-  console.error('[Server] FATAL: JWT_SECRET is not set in server/.env. Refusing to start.');
-  console.error('         Generate one with:');
-  console.error('         node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"');
-  process.exit(1);
-}
 
 app.disable('x-powered-by');
 

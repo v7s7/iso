@@ -1,6 +1,7 @@
 // Applies additive migration-preparation tables and columns. No historical
 // records are staged or imported by this command.
-require('dotenv').config();
+// server/.env by its full path, so a run from another folder still finds DATA_DIR.
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { db, DB_PATH } = require('../db');
 
 const tables = db.prepare(`

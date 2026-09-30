@@ -8,7 +8,7 @@
 // email address live?" is answered by looking rather than by guessing.
 //
 // Writes nothing, changes nothing.
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { getLdapConfig, createLdapClient } = require('../config/ldap');
 
 const WANT = process.argv[2] || null;

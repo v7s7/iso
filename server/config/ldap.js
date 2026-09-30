@@ -4,7 +4,8 @@
 // in shape from docTracking so both systems talk to the same AD the same way —
 // if one of them can sign in, so can the other.
 const ldap = require('ldapjs');
-require('dotenv').config();
+// server/.env by its full path, as every entry point loads it.
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
 function getLdapConfig() {
   const url = process.env.LDAP_URL;

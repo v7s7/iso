@@ -8,9 +8,10 @@
 //
 // Writes nothing, connects to nothing, and never prints a secret's value —
 // only whether it is set and whether it looks usable.
-require('dotenv').config();
 const fs   = require('fs');
 const path = require('path');
+// server/.env by its full path: the file this check is about, wherever it runs.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 let problems = 0;
 let warnings = 0;

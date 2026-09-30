@@ -33,7 +33,8 @@
 // editing the CSV and running it again.
 const fs   = require('fs');
 const path = require('path');
-require('dotenv').config();
+// server/.env by its full path, so a run from another folder still finds DATA_DIR.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { db } = require('../db');
 const { logAudit } = require('../utils/audit');
 const { DATA_DIR } = require('../config/dataDir');

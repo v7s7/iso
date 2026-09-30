@@ -4,9 +4,10 @@
 //   npm run migration-preflight -- path/to/migration-review-data.json
 //
 // Read-only readiness check. It never stages or imports historical records.
-require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+// server/.env by its full path, so a run from another folder still finds DATA_DIR.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const Database = require('better-sqlite3');
 const { DB_PATH } = require('../config/dataDir');
 

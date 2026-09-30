@@ -8,7 +8,8 @@
 // screen while quietly changing an ISO figure.
 //
 // Read-only: it opens the database, runs SELECTs, and changes nothing.
-require('dotenv').config();
+// server/.env by its full path, so a run from another folder still finds DATA_DIR.
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { db } = require('../db');
 const { today, addWorkingDays, workingDaysBetween, loadHolidays } = require('../utils/workdays');
 

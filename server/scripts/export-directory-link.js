@@ -1,6 +1,6 @@
 // server/scripts/export-directory-link.js
 //
-//   npm run export-link -- --from "E:\Apps\docTracking\server\data\doctracking.db"
+//   npm run export-link -- --from "E:\Apps\data\docTracking\doctracking.db"
 //
 // Pass 1 of 2. Reads the department assignments docTracking already holds —
 // 119 people, linked to Active Directory accounts and confirmed by hand — and
@@ -19,7 +19,8 @@
 const fs     = require('fs');
 const path   = require('path');
 const Database = require('better-sqlite3');
-require('dotenv').config();
+// server/.env by its full path, so a run from another folder still finds DATA_DIR.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { DATA_DIR } = require('../config/dataDir');
 
 const argFrom = process.argv.indexOf('--from');
@@ -40,7 +41,7 @@ if (!SOURCE) {
   console.error('\n  Could not find docTracking\'s database. Looked in:');
   CANDIDATES.forEach(p => console.error(`    ${p}`));
   console.error('\n  Point at it directly:');
-  console.error('    npm run export-link -- --from "E:\\Apps\\docTracking\\server\\data\\doctracking.db"\n');
+  console.error('    npm run export-link -- --from "E:\\Apps\\data\\docTracking\\doctracking.db"\n');
   process.exit(1);
 }
 
