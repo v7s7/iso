@@ -12,6 +12,7 @@
     "migration-preflight": "node scripts/migration-preflight.js",
     "migration-schema": "node scripts/apply-migration-prep-schema.js",
     "test-migration-prep": "node scripts/test-migration-prep.js",
+    "test-data-dir": "node scripts/test-data-dir.js",
     "ad-probe": "node scripts/ad-probe.js",
     "new-secret": "node scripts/new-secret.js",
     "export-link": "node scripts/export-directory-link.js",

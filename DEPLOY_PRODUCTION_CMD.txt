@@ -50,8 +50,10 @@ Keep or set these values:
   LDAP_NETBIOS=SWD
   SUPER_ADMIN_USERS=a.alkubaesy
   ADMIN_DEPT_PREFIX=
-  DB_PATH=./data/iso-quality.db
   WEEKEND_DAYS=5,6
+
+Leave DB_PATH blank. On the production server the data is kept outside the
+code folder with DATA_DIR: see section 9.
 
 Generate a new private JWT signing secret:
 
@@ -104,8 +106,9 @@ The backup command is safe while the application is running:
 
   npm run backup
 
-Or double-click BACKUP-ISO.cmd. Backups are written under data\backups and are
-verified automatically with SQLite's integrity check.
+Or double-click BACKUP-ISO.cmd. Backups are written to the backups folder in
+the data folder (server\data\backups, or DATA_DIR\backups once DATA_DIR is set)
+and are verified automatically with SQLite's integrity check.
 
 
 8. FINAL GO-LIVE CHECK
@@ -121,9 +124,50 @@ verified automatically with SQLite's integrity check.
   [ ] Server backup has been copied to the approved backup location
 
 
+9. KEEP THE DATA OUTSIDE THE CODE FOLDER
+----------------------------------------
+Done once on the production server. Afterwards the code folder holds only
+code, a pull cannot touch the data, and the backup of E:\Apps\data covers it.
+
+Stop the application first by closing its Command Prompt window. That leaves
+the newest changes in iso-quality.db-wal, so that file must move together with
+the database. Use the same kind of Command Prompt the server is started from:
+
+  mkdir E:\Apps\data\iso
+  cd /d E:\Apps\iso\server\data
+  move iso-quality.db E:\Apps\data\iso\
+  move iso-quality.db-wal E:\Apps\data\iso\
+  move iso-quality.db-shm E:\Apps\data\iso\
+  move directory-link.csv E:\Apps\data\iso\
+
+"The system cannot find the file specified" for a -wal or -shm file only means
+it was not there.
+
+Then add this line to server\.env, without quotes, and make sure DB_PATH is
+blank or absent:
+
+  DATA_DIR=E:\Apps\data\iso
+
+Check before starting:
+
+  cd /d E:\Apps\iso\server
+  npm run check-env
+  npm run data-check
+
+Start the application. Its window must show:
+
+  [DB] SQLite ready: E:\Apps\data\iso\iso-quality.db
+
+With DATA_DIR set, the server refuses to start if the database is not in that
+folder, rather than create a new empty one, and it warns if an old database is
+still in server\data. To go back, stop the server, move the files back into
+server\data and remove the DATA_DIR line.
+
+
 IMPORTANT
 ---------
 Do not run npm run seed on this package.
-Do not overwrite server\data\iso-quality.db during later application updates.
+Do not overwrite the live database (server\data\iso-quality.db, or the one in
+DATA_DIR) during later application updates.
 Do not commit or share server\.env; it contains the signing secret and may
 contain an Active Directory service-account password.

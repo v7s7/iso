@@ -119,8 +119,19 @@ ok(process.env.ADMIN_DEPT_PREFIX
 
 // ── Database ──
 console.log('\nDatabase');
-const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'iso-quality.db');
-if (fs.existsSync(dbPath)) {
+const { DATA_DIR, DATA_DIR_SET, DB_PATH: dbPath, checkDataLocation } = require('../config/dataDir');
+ok(DATA_DIR_SET
+  ? `data folder (DATA_DIR) = ${DATA_DIR}`
+  : `data folder = ${DATA_DIR} (DATA_DIR unset, so inside the code folder)`);
+// The same check the server makes before it opens the database, so a move that
+// is not finished shows up here rather than as a server that will not start.
+const location = checkDataLocation();
+const rest = lines => lines.slice(1).forEach(l => console.log(`      → ${l}`));
+location.warnings.forEach(lines => { warn(lines[0]); rest(lines); });
+if (location.refuse) {
+  bad(location.refuse[0]);
+  rest(location.refuse);
+} else if (fs.existsSync(dbPath)) {
   const size = (fs.statSync(dbPath).size / 1024).toFixed(0);
   ok(`${dbPath} (${size} KB)`);
   try {

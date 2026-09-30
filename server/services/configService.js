@@ -11,6 +11,10 @@
 const fs   = require('fs');
 const path = require('path');
 
+// Stays in config/ when DATA_DIR moves the data out of the code folder: nothing
+// in the app calls writeConfig, so the file is configuration that git tracks,
+// not data. A screen that writes it would make it data, and it would then have
+// to move to DATA_DIR (see config/dataDir.js).
 const CONFIG_PATH = path.join(__dirname, '..', 'config', 'directory-map.json');
 
 const DEFAULT_CONFIG = {

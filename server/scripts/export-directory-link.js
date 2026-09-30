@@ -20,11 +20,15 @@ const fs     = require('fs');
 const path   = require('path');
 const Database = require('better-sqlite3');
 require('dotenv').config();
+const { DATA_DIR } = require('../config/dataDir');
 
 const argFrom = process.argv.indexOf('--from');
 const CANDIDATES = [
   (argFrom > -1 && process.argv[argFrom + 1]) || null,
   process.env.DOCTRACKING_DB,
+  // docTracking's data folder once its data has moved out of its code folder.
+  // First, because a copy left behind in the old place is no longer the live one.
+  'E:\\Apps\\data\\docTracking\\doctracking.db',
   'E:\\Apps\\docTracking\\server\\data\\doctracking.db',
   path.join(__dirname, '..', '..', '..', 'docTracking', 'server', 'data', 'doctracking.db'),
   'C:\\Users\\DELL\\docTracking\\server\\data\\doctracking.db',
@@ -145,7 +149,8 @@ for (const p of people) {
   ]);
 }
 
-const OUT = path.join(__dirname, '..', 'data', 'directory-link.csv');
+// In the data folder, where import-directory-link.js looks for it.
+const OUT = path.join(DATA_DIR, 'directory-link.csv');
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 // A BOM, so Excel opens the Arabic as UTF-8 rather than as mojibake. Without it
 // Excel guesses the system codepage and every name arrives unreadable.

@@ -17,8 +17,9 @@
 // under the wrong قسم goes on filing requests that are counted against a
 // department they are not in, and nothing ever says so.
 //
-// Pass 2 of 2. Reads server/data/directory-link.csv — the one you corrected —
-// and gives each person their ISO department and role.
+// Pass 2 of 2. Reads directory-link.csv from the data folder (DATA_DIR, or
+// server/data when that is unset), the one you corrected, and gives each person
+// their ISO department and role.
 //
 // It defaults to a dry run. An import that writes on the first invocation is an
 // import nobody reads the output of.
@@ -35,9 +36,10 @@ const path = require('path');
 require('dotenv').config();
 const { db } = require('../db');
 const { logAudit } = require('../utils/audit');
+const { DATA_DIR } = require('../config/dataDir');
 
 const APPLY = process.argv.includes('--apply');
-const CSV   = path.join(__dirname, '..', 'data', 'directory-link.csv');
+const CSV   = path.join(DATA_DIR, 'directory-link.csv');
 
 // null = undecided, and the import will refuse to apply.
 const uncertainArg = process.argv.find(a => a.startsWith('--uncertain='));

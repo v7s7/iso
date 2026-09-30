@@ -12,13 +12,35 @@ const path     = require('path');
 const fs       = require('fs');
 const Database = require('better-sqlite3');
 
-const DB_PATH = process.env.DB_PATH
-  || path.join(__dirname, '..', 'data', 'iso-quality.db');
+// DATA_DIR, or server/data when it is unset; DB_PATH overrides the file alone.
+const { DB_PATH, DATA_DIR_SET, checkDataLocation } = require('../config/dataDir');
 
-const dir = path.dirname(DB_PATH);
-if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+// Checked before the open, because opening a missing file is what creates it.
+// config/dataDir.js explains why DATA_DIR turns a missing database into a
+// refusal rather than a fresh start.
+const location = checkDataLocation();
+for (const lines of location.warnings) {
+  console.warn(`[DB] WARNING: ${lines[0]}`);
+  lines.slice(1).forEach(l => console.warn(`              ${l}`));
+}
+if (location.refuse) {
+  console.error(`[DB] FATAL: ${location.refuse[0]}`);
+  location.refuse.slice(1).forEach(l => console.error(`            ${l}`));
+  process.exit(1);
+}
 
-const db = new Database(DB_PATH);
+// Without DATA_DIR this is the old behaviour: create the folder and, on a first
+// start, the database. Said out loud, so a server that has lost track of its
+// data announces it rather than quietly showing an empty site.
+if (!DATA_DIR_SET) {
+  const dir = path.dirname(DB_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+if (!fs.existsSync(DB_PATH)) console.warn(`[DB] No database at ${DB_PATH}. Creating a new empty one.`);
+
+// fileMustExist backs up the check above: with DATA_DIR set, nothing in this
+// file may create the database.
+const db = new Database(DB_PATH, { fileMustExist: DATA_DIR_SET });
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 

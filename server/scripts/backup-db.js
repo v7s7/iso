@@ -5,14 +5,16 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
+// The same database the server opens, and the backups beside it in the data
+// folder (DATA_DIR when set), so they are covered by whatever backs that up.
+const { DATA_DIR, DB_PATH } = require('../config/dataDir');
 
-const serverDir = path.resolve(__dirname, '..');
-const source = path.resolve(serverDir, process.env.DB_PATH || 'data/iso-quality.db');
+const source = DB_PATH;
 const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
 const requested = process.argv[2];
 const destination = requested
   ? path.resolve(process.cwd(), requested)
-  : path.join(serverDir, 'data', 'backups', `iso-quality-${stamp}.db`);
+  : path.join(DATA_DIR, 'backups', `iso-quality-${stamp}.db`);
 
 if (!fs.existsSync(source)) {
   console.error(`Database not found: ${source}`);

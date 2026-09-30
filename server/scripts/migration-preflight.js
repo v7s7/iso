@@ -8,8 +8,9 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
+const { DB_PATH } = require('../config/dataDir');
 
-const dbPath = path.resolve(process.env.DB_PATH || path.join(__dirname, '..', 'data', 'iso-quality.db'));
+const dbPath = DB_PATH;
 const packagePath = process.argv[2] ? path.resolve(process.argv[2]) : null;
 
 if (!fs.existsSync(dbPath)) {
