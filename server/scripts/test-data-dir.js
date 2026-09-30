@@ -373,6 +373,71 @@ try {
     fs.rmSync(fakeEnv);
   }
 
+  // ── DATA_DIR lost from server/.env after the move ──
+  // The 09-30 rehearsal of the SWAPP move: with the line removed after the move,
+  // the server made a new empty database in server/data and started on it, and
+  // putting the line back then refused and said to swap that empty database in.
+  console.log('\nDATA_DIR missing from server/.env after the move');
+  {
+    const planned    = path.join(tmp, 'data', 'app');   // <apps>/data/<app folder> for <apps>/app/server
+    const plannedDb  = path.join(planned, DB_FILE);
+    const movedAside = path.join(fake, 'data.moved-20260930');
+    const copySet = (fromBase, toBase) => setFiles(fromBase).forEach((f, i) => {
+      if (!exists(f)) return;
+      fs.mkdirSync(path.dirname(toBase), { recursive: true });
+      fs.copyFileSync(f, setFiles(toBase)[i]);
+      const st = fs.statSync(f);
+      fs.utimesSync(setFiles(toBase)[i], st.atime, st.mtime);
+    });
+    check('(the planned folder is <apps>/data/<app folder>)', resolveDataPaths({}, fake).plannedDir === planned);
+
+    // The move as the backup tool's move-data makes it: the database in the
+    // planned folder, server/data renamed to data.moved-<date>.
+    fs.renameSync(fakeLegacy, movedAside);
+    copySet(newDb, plannedDb);
+    const r = startDb({}, countDepts);
+    check('refuses rather than make a new empty database in server/data',
+      r.code === 1 && /DATA_DIR is not set in server\/.env, but the database is at/.test(r.out), r.out);
+    check('names the line to add', r.out.includes(`DATA_DIR=${planned}`), r.out);
+    check('and creates nothing there', !exists(fakeLegacy));
+
+    const r2 = startDb({ DATA_DIR: planned }, countDepts);
+    check('with the line back it starts on the moved database, with no warning',
+      r2.code === 0 && /departments=3\b/.test(r2.out) && !/WARNING/.test(r2.out), r2.out);
+
+    // Moved somewhere other than the planned folder: only data.moved-<date> says so.
+    const other = path.join(tmp, 'data', 'app-other');
+    fs.renameSync(planned, other);
+    const r3 = startDb({}, countDepts);
+    check('refuses too when only data.moved-<date> shows the data was moved',
+      r3.code === 1 && /data\.moved-20260930 is beside it/.test(r3.out), r3.out);
+    check('and creates nothing there either', !exists(fakeLegacy));
+    fs.renameSync(other, planned);
+
+    // A copy put back into server/data while the moved one stays: DATA_DIR
+    // unset means server/data, as before, but not without saying so.
+    copySet(plannedDb, legacyDb);
+    const r4 = startDb({}, countDepts);
+    check('with a database in both places it starts on server/data, and warns',
+      r4.code === 0 && /departments=3\b/.test(r4.out) && /there is another one at/.test(r4.out), r4.out);
+    fs.rmSync(fakeLegacy, { recursive: true, force: true });
+
+    // A new empty database in server/data, newer than the one in use, as a start
+    // without the line made before this check. DB_PATH makes it here, because
+    // nothing else will any more.
+    const r5 = startDb({ DB_PATH: legacyDb }, 'db.close();');
+    check('(a new empty database in server/data)', r5.code === 0 && exists(legacyDb), r5.out);
+    const older = new Date(Date.now() - 3600000);
+    setFiles(plannedDb).forEach(f => { if (exists(f)) fs.utimesSync(f, older, older); });
+    const r6 = startDb({ DATA_DIR: planned }, countDepts);
+    check('is not taken for newer data: it starts on the database in DATA_DIR',
+      r6.code === 0 && /departments=3\b/.test(r6.out), r6.out);
+    check('and warns not to move it there, rather than saying to swap it in',
+      /with less in it/.test(r6.out) && /Do NOT move it into/.test(r6.out) && !/Refusing/.test(r6.out), r6.out);
+    fs.rmSync(fakeLegacy, { recursive: true, force: true });
+    fs.rmSync(movedAside, { recursive: true, force: true });
+  }
+
   // ── config/directory-map.json ──
   console.log('\nconfig/directory-map.json');
   {
